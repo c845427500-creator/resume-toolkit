@@ -1,0 +1,44 @@
+*{margin:0;padding:0;box-sizing:border-box}
+html{height:100%}
+body{width:420px;height:560px;max-height:600px;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1D2129;background:#F2F3F5}
+#app{display:flex;flex-direction:column;height:100%}
+.hidden{display:none!important}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fff;border-bottom:1px solid #E8E8E8;flex-shrink:0}
+.header h1{font-size:13px;font-weight:700}
+.header-actions{display:flex;gap:6px}
+.text-btn{border:none;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px;border-radius:4px;line-height:1.6}
+#resetBtn{background:#F2F3F5;color:#4E5969}
+#resetBtn:hover{background:#E5E6EB}
+#importBtn{background:#0052D9;color:#fff}
+#importBtn:hover{background:#0040AE}
+
+/* Status */
+.status-bar{padding:5px 14px;font-size:11px;text-align:center;flex-shrink:0}
+.status-bar.ok{background:#E8FFEA;color:#00B42A}
+.status-bar.err{background:#FFF0ED;color:#D54941}
+
+/* Content */
+.content{flex:1;min-height:0;overflow-y:auto;padding:6px 12px}
+.loading,.empty{text-align:center;padding:48px 0;color:#86909C;font-size:12px}
+
+/* Section */
+.section{margin-bottom:6px}
+.section-header{display:flex;align-items:center;padding:7px 10px;background:#fff;border:1px solid #E5E7EB;border-radius:8px;cursor:pointer;user-select:none;gap:6px}
+.section-header:hover{background:#F8FAFB}
+.section-title{font-size:12px;font-weight:600;white-space:nowrap}
+.section-badge{font-size:10px;color:#0052D9;background:#F2F3FF;padding:1px 6px;border-radius:99px;font-weight:600;margin-left:auto}
+.section-arrow{font-size:10px;color:#999;transition:transform .15s;flex-shrink:0}
+.section.collapsed .section-arrow{transform:rotate(-90deg)}
+.section.collapsed .section-body{display:none}
+.section-body{padding:4px 0 0 0}
+
+/* Item */
+.item-btn{display:block;width:100%;text-align:left;background:#fff;border:1px solid #E5E7EB;border-radius:6px;padding:6px 10px;margin-bottom:3px;cursor:pointer;font-size:11px;color:#1D2129;line-height:1.4;transition:all .12s}
+.item-btn:hover{border-color:#0052D9;background:#F2F3FF}
+.item-btn .item-label{font-size:10px;color:#0052D9;font-weight:600;margin-bottom:1px}
+.item-btn .item-text{color:#4E5969;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Footer */
+.footer{padding:6px 14px;background:#fff;border-top:1px solid #E8E8E8;font-size:10px;color:#999;text-align:center;flex-shrink:0}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>简历库助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <h1>简历库助手</h1>
+      <div class="header-actions">
+        <button id="resetBtn" class="text-btn">重置</button>
+        <button id="importBtn" class="text-btn">导入</button>
+      </div>
+    </div>
+    <div id="statusBar" class="status-bar hidden"></div>
+    <div class="content">
+      <div id="loading" class="loading">加载中...</div>
+      <div id="empty" class="empty hidden">暂无数据，请点击「重置」或「导入」</div>
+      <div id="sections" class="sections hidden"></div>
+    </div>
+    <div class="footer">点击条目 → 填入网页当前输入框 · 下拉框自动匹配</div>
+    <input type="file" id="fileInput" accept=".json" class="hidden">
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
