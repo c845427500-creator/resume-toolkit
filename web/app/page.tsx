@@ -1,451 +1,346 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Settings,
-  Copy,
-  Check,
-  Sparkles,
-  Loader2,
-  Trash2,
-  Download,
-  ChevronRight,
-} from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
+import { ArrowRight, Sparkles, Loader2, Upload, FileText, Check, Settings } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import resumeData from "@/lib/resume-data.json";
-import { optimizeResume } from "@/lib/deepseek-client";
-import { exportForExtension } from "@/lib/export-utils";
+import { parseResume, recommendDirections, matchCardsByDirection } from "@/lib/resume-parser";
+import { initStore, importParsedResume, saveStore, JOB_TYPES, setDirectionLibrary } from "@/lib/resume-store";
+import type { CardItem } from "@/lib/resume-store";
 
-type JobType = "产品" | "AI" | "技术" | "金融" | "综合";
-
-const JOB_TYPES: { key: JobType; label: string; emoji: string }[] = [
-  { key: "综合", label: "综合", emoji: "📋" },
-  { key: "产品", label: "产品", emoji: "💡" },
-  { key: "AI", label: "AI", emoji: "🤖" },
-  { key: "技术", label: "技术", emoji: "💻" },
-  { key: "金融", label: "金融", emoji: "📊" },
-];
-
-function tagMatch(itemTags: string[], targetJob: JobType): boolean {
-  if (targetJob === "综合") return true;
-  return itemTags.includes(targetJob);
-}
-
-export default function Home() {
-  const [jobType, setJobType] = useState<JobType>("综合");
-  const [apiKeyModal, setApiKeyModal] = useState(false);
+export default function HomePage() {
+  const router = useRouter();
+  const [nickname, setNickname] = useState("");
+  const [nicknameInput, setNicknameInput] = useState("");
+  const [showNicknameEdit, setShowNicknameEdit] = useState(false);
+  const [resumeText, setResumeText] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [jdText, setJdText] = useState("");
-  const [optimizing, setOptimizing] = useState(false);
-  const [optimizedSections, setOptimizedSections] = useState<Record<string, string>>({});
-  const [copied, setCopied] = useState(false);
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState(false);
+  const [parseError, setParseError] = useState("");
+  const [summary, setSummary] = useState<{ name: string; eduCount: number; expCount: number; projCount: number; skillCats: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useState(() => {
-    if (typeof window !== "undefined") {
-      setApiKey(localStorage.getItem("ds_api_key") || "");
-    }
-  });
+  useEffect(() => {
+    setNickname(localStorage.getItem("resume_nickname") || "");
+    setApiKey(localStorage.getItem("ds_api_key") || "");
+  }, []);
+
+  const saveNickname = (name: string) => {
+    setNickname(name);
+    localStorage.setItem("resume_nickname", name);
+    setShowNicknameEdit(false);
+  };
 
   const saveApiKey = (key: string) => {
     setApiKey(key);
-    if (key) localStorage.setItem("ds_api_key", key);
-    else localStorage.removeItem("ds_api_key");
-    setApiKeyModal(false);
+    if (key) {
+      localStorage.setItem("ds_api_key", key);
+    } else {
+      localStorage.removeItem("ds_api_key");
+    }
+    setShowApiModal(false);
   };
 
-  const filtered = useMemo(() => {
-    const filterBullets = (bullets: { text: string; tags: string[] }[]) =>
-      jobType === "综合"
-        ? bullets
-        : bullets.filter((b) => b.tags.some((t) => tagMatch([t], jobType)));
-
-    return {
-      personal: resumeData.personal,
-      education: resumeData.education,
-      experiences: resumeData.experiences
-        .filter((e) => tagMatch(e.tags, jobType))
-        .map((e) => ({ ...e, bullets: filterBullets(e.bullets) }))
-        .filter((e) => e.bullets.length > 0),
-      projects: resumeData.projects
-        .filter((p) => tagMatch(p.tags, jobType))
-        .map((p) => ({ ...p, bullets: filterBullets(p.bullets) }))
-        .filter((p) => p.bullets.length > 0),
-      leadership: resumeData.leadership
-        .filter((l) => tagMatch(l.tags, jobType))
-        .map((l) => ({ ...l, bullets: filterBullets(l.bullets) }))
-        .filter((l) => l.bullets.length > 0),
-      skills: resumeData.skills,
-    };
-  }, [jobType]);
-
-  const totalItems = filtered.experiences.length + filtered.projects.length + filtered.leadership.length;
-
-  const resumeText = useMemo(() => {
-    const sections: string[] = [];
-    sections.push(`${resumeData.personal.name}`);
-    sections.push(`${resumeData.personal.phone} · ${resumeData.personal.email}`);
-    sections.push("");
-    sections.push("▎教育经历");
-    filtered.education.forEach((e) => {
-      sections.push(`${e.school}  ${e.degree}  ${e.period}`);
-      if (e.notes) sections.push(e.notes);
-    });
-    sections.push("");
-    if (filtered.experiences.length > 0) {
-      sections.push("▎实习经历");
-      filtered.experiences.forEach((e) => {
-        sections.push(`${e.company}  ${e.role}  ${e.period}`);
-        e.bullets.forEach((b) => sections.push(`• ${b.text}`));
-        sections.push("");
-      });
-    }
-    if (filtered.projects.length > 0) {
-      sections.push("▎项目经历");
-      filtered.projects.forEach((p) => {
-        sections.push(`${p.name}  ${p.role}  ${p.period}`);
-        p.bullets.forEach((b) => sections.push(`• ${b.text}`));
-        sections.push("");
-      });
-    }
-    if (filtered.leadership.length > 0) {
-      sections.push("▎校园/实践经历");
-      filtered.leadership.forEach((l) => {
-        sections.push(`${l.org}  ${l.role}  ${l.period}`);
-        l.bullets.forEach((b) => sections.push(`• ${b.text}`));
-        sections.push("");
-      });
-    }
-    sections.push("▎技能");
-    Object.entries(resumeData.skills).forEach(([cat, items]) => {
-      sections.push(`${cat}：${items.join("、")}`);
-    });
-    return sections.join("\n");
-  }, [filtered]);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(resumeText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [resumeText]);
-
-  const handleOptimize = async () => {
-    if (!apiKey || !jdText.trim()) return;
-    setOptimizing(true);
+  const extractTextFromFile = async (file: File): Promise<string | null> => {
     try {
-      const result = await optimizeResume(apiKey, jdText, resumeText);
-      if (result) setOptimizedSections({ full: result });
-    } catch {} finally {
-      setOptimizing(false);
+      if (file.name.endsWith(".docx")) {
+        const mammoth = (await import("mammoth")).default;
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        return result.value;
+      } else if (file.name.endsWith(".pdf")) {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs`;
+        const pdfData = new Uint8Array(await file.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        let text = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map((item: any) => item.str).join(" ") + "\n";
+        }
+        return text;
+      } else {
+        return await file.text();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setParseError(`文件解析失败（${msg}），请尝试粘贴文本`);
+      return null;
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!apiKey) { setShowApiModal(true); return; }
+    setParsing(true);
+    setParseError("");
+    const text = await extractTextFromFile(file);
+    if (text === null) { setParsing(false); return; }
+    setResumeText(text);
+    await doParse(text);
+  };
+
+  const doParse = async (text: string) => {
+    if (!apiKey) { setShowApiModal(true); return; }
+    if (!text.trim()) { setParseError("请先粘贴或上传简历"); return; }
+    setParsing(true);
+    setParseError("");
+    try {
+      const data = await parseResume(apiKey, text);
+      if (!data) { setParseError("AI 解析失败，请检查 API Key 或重试"); setParsing(false); return; }
+      // Recommend directions
+      const summaryText = [
+        data.personal.name,
+        data.education.undergrad ? `${data.education.undergrad.schoolName} ${data.education.undergrad.major}` : "",
+        data.education.master ? `${data.education.master.schoolName} ${data.education.master.major}` : "",
+        `实习经历: ${data.experiences.length} 段`,
+        `项目经历: ${data.projects.length} 个`,
+        `技能: ${Object.keys(data.skills).join("、")}`,
+      ].filter(Boolean).join("\n");
+      const dirs = await recommendDirections(apiKey, summaryText);
+      // Init store and import
+      let store = initStore();
+      store = importParsedResume(store, data);
+      // For each AI-recommended direction, match cards via AI semantic matching
+      if (dirs && dirs.length > 0) {
+        const allCards = [...data.experiences, ...data.projects, ...data.campus, ...data.social];
+        const expIds = new Set(data.experiences.map((c) => c.id));
+        const projIds = new Set(data.projects.map((c) => c.id));
+        const campusIds = new Set(data.campus.map((c) => c.id));
+        const socialIds = new Set(data.social.map((c) => c.id));
+        for (const dir of dirs) {
+          const normDir = dir.trim();
+          if (!normDir) continue;
+          const matchedIndices = await matchCardsByDirection(apiKey, normDir, allCards);
+          const matched = matchedIndices.map((i) => allCards[i]).filter(Boolean);
+          const lib = {
+            experiences: matched.filter((c) => expIds.has(c.id)),
+            projects: matched.filter((c) => projIds.has(c.id)),
+            campus: matched.filter((c) => campusIds.has(c.id)),
+            social: matched.filter((c) => socialIds.has(c.id)),
+            skills: data.skills,
+            selfEval: data.selfEval,
+          };
+          store = importParsedResume(store, {}, [normDir]);
+          store = setDirectionLibrary(store, normDir, lib);
+        }
+      }
+      saveStore(store);
+      setSummary({
+        name: data.personal.name || "未识别",
+        eduCount: (data.education.undergrad ? 1 : 0) + (data.education.master ? 1 : 0),
+        expCount: data.experiences.length,
+        projCount: data.projects.length,
+        skillCats: Object.keys(data.skills).length,
+      });
+      setParsed(true);
+    } catch {
+      setParseError("解析过程出错，请重试");
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleParse = () => doParse(resumeText);
+
+  const handleReset = () => {
+    setResumeText("");
+    setParsed(false);
+    setSummary(null);
+    setParseError("");
+  };
+
+  const goToLibrary = () => {
+    router.push("/library");
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-claude-canvas flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-[#E2E8F0] sticky top-0 z-20">
-        <div className="max-w-2xl mx-auto px-5 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#0052D9] flex items-center justify-center text-white text-sm font-bold">
-              R
-            </div>
-            <div>
-              <h1 className="text-[15px] font-bold text-[#0F172A] leading-tight">简历库</h1>
-              <p className="text-[11px] text-[#64748B]">AI Resume Toolkit</p>
-            </div>
-          </div>
+      <header className="sticky top-0 z-20 bg-claude-canvas/80 backdrop-blur-sm border-b border-claude-hairline">
+        <div className="max-w-[720px] mx-auto px-6 h-14 flex items-center justify-between">
+          <span className="text-[14px] font-medium text-claude-ink tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            简历库
+          </span>
           <button
-            onClick={() => setApiKeyModal(true)}
-            className="w-8 h-8 rounded-lg hover:bg-[#F1F5F9] flex items-center justify-center transition-colors"
+            onClick={() => setShowApiModal(true)}
+            className="w-7 h-7 rounded-md hover:bg-claude-surface-card flex items-center justify-center transition-colors"
           >
-            <Settings size={16} className="text-[#64748B]" />
+            <Settings size={14} className="text-claude-muted" />
           </button>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-5 py-5 space-y-5">
-        {/* Pills: Job Type Selector */}
-        <div className="flex gap-1.5 p-1 bg-[#F1F5F9] rounded-xl">
-          {JOB_TYPES.map((jt) => (
-            <button
-              key={jt.key}
-              onClick={() => { setJobType(jt.key); setOptimizedSections({}); }}
-              className={`flex-1 py-2 text-xs font-medium rounded-[10px] transition-all duration-200 ${
-                jobType === jt.key
-                  ? "bg-white text-[#0052D9] shadow-sm"
-                  : "text-[#64748B] hover:text-[#334155]"
-              }`}
-            >
-              <span className="mr-1">{jt.emoji}</span>
-              {jt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* AI Optimization Panel */}
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 rounded-lg bg-[#F2F3FF] flex items-center justify-center">
-              <Sparkles size={13} className="text-[#0052D9]" />
-            </div>
-            <p className="text-[13px] font-semibold text-[#0F172A]">AI 简历优化</p>
-            <p className="text-[11px] text-[#64748B]">粘贴目标 JD，AI 自动匹配关键词</p>
-          </div>
-          <textarea
-            value={jdText}
-            onChange={(e) => setJdText(e.target.value)}
-            placeholder="粘贴目标岗位的职位描述..."
-            className="w-full h-[72px] px-3.5 py-3 bg-[#F8FAFC] rounded-xl text-[13px] text-[#0F172A] placeholder-[#94A3B8] resize-none border border-transparent focus:border-[#0052D9] focus:bg-white focus:outline-none transition-all"
-          />
-          <div className="flex items-center justify-between mt-3">
-            <span className="text-[11px] text-[#94A3B8]">
-              {apiKey ? "API Key 已就绪" : "请先设置 API Key"}
-            </span>
-            <button
-              onClick={handleOptimize}
-              disabled={!apiKey || !jdText.trim() || optimizing}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#0052D9] disabled:bg-[#CBD5E1] disabled:text-[#94A3B8] text-white text-[12px] font-medium rounded-lg hover:bg-[#366EF4] transition-colors"
-            >
-              {optimizing ? (
-                <><Loader2 size={13} className="animate-spin" />优化中</>
-              ) : (
-                <><Sparkles size={13} />优化简历</>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Resume Card */}
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-          {/* Card header */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#F1F5F9]">
-            <div className="flex items-center gap-2">
-              <h2 className="text-[14px] font-bold text-[#0F172A]">
-                {jobType === "综合" ? "完整简历" : `${jobType}方向`}
-              </h2>
-              <span className="text-[11px] text-[#94A3B8] bg-[#F1F5F9] px-2 py-0.5 rounded-full">
-                {totalItems} 段经历
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {optimizedSections.full && (
+      <main className="flex-1 flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-[600px] space-y-10">
+          {/* Hero */}
+          <div className="text-center space-y-3">
+            <h1 className="text-[40px] leading-[1.15] text-claude-ink" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 400, letterSpacing: "-0.5px" }}>
+              {nickname && !showNicknameEdit ? `${nickname}的` : ""}简历库
+            </h1>
+            {nickname && !showNicknameEdit ? (
+              <p className="text-[14px] text-claude-muted">
+                你好，{nickname}
                 <button
-                  onClick={() => setOptimizedSections({})}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-[#64748B] hover:text-[#EF4444] rounded-lg hover:bg-[#FEF2F2] transition-colors"
+                  onClick={() => { setNicknameInput(nickname); setShowNicknameEdit(true); }}
+                  className="ml-2 text-claude-muted-soft hover:text-claude-ink underline underline-offset-2 transition-colors"
                 >
-                  <Trash2 size={12} />还原
+                  修改昵称
+                </button>
+              </p>
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <input
+                  value={nicknameInput}
+                  onChange={(e) => setNicknameInput(e.target.value)}
+                  placeholder="设置你的昵称"
+                  className="text-[14px] text-claude-ink bg-claude-surface-card border border-claude-hairline rounded-[8px] px-3 py-2 w-[200px] placeholder-claude-muted-soft focus:border-claude-primary focus:outline-none transition-colors text-center"
+                  onKeyDown={(e) => { if (e.key === "Enter") saveNickname(nicknameInput); }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => saveNickname(nicknameInput)}
+                  disabled={!nicknameInput.trim()}
+                  className="text-[13px] font-medium px-4 py-2 rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-40 transition-colors"
+                >
+                  确认
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Resume Import */}
+          <div className="bg-claude-surface-card rounded-[16px] border border-claude-hairline p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[16px] font-medium text-claude-ink">导入简历</h2>
+              {parsed && (
+                <button
+                  onClick={handleReset}
+                  className="text-[12px] text-claude-muted hover:text-red-500 transition-colors"
+                >
+                  一键清空
                 </button>
               )}
-              <button
-                onClick={() => exportForExtension(resumeData, jobType)}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-[#64748B] hover:text-[#0F172A] bg-[#F1F5F9] rounded-lg hover:bg-[#E2E8F0] transition-colors"
-              >
-                <Download size={12} />导出
-              </button>
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#0F172A] text-white text-[11px] font-medium rounded-lg hover:bg-[#1E293B] transition-colors"
-              >
-                {copied ? <><Check size={12} />已复制</> : <><Copy size={12} />复制全文</>}
-              </button>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".docx,.pdf,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsing}
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-[14px] font-medium rounded-[10px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {parsing ? (
+                <><Loader2 size={16} className="animate-spin" />AI 解析中…</>
+              ) : (
+                <><Upload size={16} />上传简历 .docx / .pdf</>
+              )}
+            </button>
+            <p className="text-center text-[12px] text-claude-muted-soft">
+              上传后 AI 自动解析为结构化简历
+            </p>
+            {parseError && (
+              <p className="text-[13px] text-red-500">{parseError}</p>
+            )}
           </div>
 
-          {/* Resume content */}
-          <AnimatePresence mode="wait">
+          {/* Parse Result */}
+          {parsed && summary && (
             <motion.div
-              key={jobType + (optimizedSections.full ? "-opt" : "-raw")}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="px-5 py-4"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-claude-surface-card rounded-[16px] border border-claude-hairline p-6 space-y-4"
             >
-              {optimizedSections.full ? (
-                <pre className="font-sans text-[13px] leading-relaxed whitespace-pre-wrap text-[#334155]">
-                  {optimizedSections.full}
-                </pre>
-              ) : (
-                <div className="space-y-5">
-                  {/* Name + Contact */}
-                  <div className="text-center pb-4 border-b border-[#F1F5F9]">
-                    <h3 className="text-[17px] font-bold text-[#0F172A] mb-1">{resumeData.personal.name}</h3>
-                    <p className="text-[12px] text-[#64748B]">
-                      {resumeData.personal.phone} · {resumeData.personal.email}
-                    </p>
-                  </div>
-
-                  {/* Education */}
-                  <Section title="教育经历" icon="🎓">
-                    {filtered.education.map((e, i) => (
-                      <div key={i} className="flex justify-between items-start py-2">
-                        <div>
-                          <p className="text-[13px] font-semibold text-[#0F172A]">{e.school}</p>
-                          <p className="text-[12px] text-[#475569]">{e.degree}</p>
-                          {e.notes && <p className="text-[11px] text-[#64748B] mt-0.5">{e.notes}</p>}
-                        </div>
-                        <span className="text-[11px] text-[#94A3B8] whitespace-nowrap ml-4">{e.period}</span>
-                      </div>
-                    ))}
-                  </Section>
-
-                  {/* Experiences */}
-                  {filtered.experiences.length > 0 && (
-                    <Section title="实习经历" icon="💼">
-                      {filtered.experiences.map((e) => (
-                        <div key={e.id} className="py-2.5">
-                          <div className="flex justify-between items-baseline mb-1.5">
-                            <p className="text-[13px] font-semibold text-[#0F172A]">{e.company}</p>
-                            <span className="text-[11px] text-[#94A3B8] whitespace-nowrap ml-4">{e.period}</span>
-                          </div>
-                          <p className="text-[12px] text-[#0052D9] font-medium mb-2">{e.role}</p>
-                          <ul className="space-y-1.5">
-                            {e.bullets.map((b: any, idx: number) => (
-                              <li key={idx} className="flex gap-2 text-[13px] text-[#334155] leading-relaxed">
-                                <span className="text-[#CBD5E1] mt-[3px]">▸</span>
-                                <span>{b.text}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </Section>
-                  )}
-
-                  {/* Projects */}
-                  {filtered.projects.length > 0 && (
-                    <Section title="项目经历" icon="🚀">
-                      {filtered.projects.map((p) => (
-                        <div key={p.id} className="py-2.5">
-                          <div className="flex justify-between items-baseline mb-1.5">
-                            <p className="text-[13px] font-semibold text-[#0F172A]">{p.name}</p>
-                            <span className="text-[11px] text-[#94A3B8] whitespace-nowrap ml-4">{p.period}</span>
-                          </div>
-                          <p className="text-[12px] text-[#0052D9] font-medium mb-2">{p.role}</p>
-                          <ul className="space-y-1.5">
-                            {p.bullets.map((b: any, idx: number) => (
-                              <li key={idx} className="flex gap-2 text-[13px] text-[#334155] leading-relaxed">
-                                <span className="text-[#CBD5E1] mt-[3px]">▸</span>
-                                <span>{b.text}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </Section>
-                  )}
-
-                  {/* Leadership */}
-                  {filtered.leadership.length > 0 && (
-                    <Section title="校园 / 实践经历" icon="🌟">
-                      {filtered.leadership.map((l) => (
-                        <div key={l.id} className="py-2.5">
-                          <div className="flex justify-between items-baseline mb-1.5">
-                            <p className="text-[13px] font-semibold text-[#0F172A]">{l.org}</p>
-                            <span className="text-[11px] text-[#94A3B8] whitespace-nowrap ml-4">{l.period}</span>
-                          </div>
-                          <p className="text-[12px] text-[#0052D9] font-medium mb-2">{l.role}</p>
-                          <ul className="space-y-1.5">
-                            {l.bullets.map((b: any, idx: number) => (
-                              <li key={idx} className="flex gap-2 text-[13px] text-[#334155] leading-relaxed">
-                                <span className="text-[#CBD5E1] mt-[3px]">▸</span>
-                                <span>{b.text}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </Section>
-                  )}
-
-                  {/* Skills */}
-                  <Section title="技能" icon="🛠">
-                    <div className="space-y-1.5">
-                      {Object.entries(filtered.skills).map(([cat, items]) => (
-                        <div key={cat} className="flex text-[12px]">
-                          <span className="text-[#64748B] min-w-[72px] font-medium">{cat}</span>
-                          <span className="text-[#334155]">{items.join("、")}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Section>
+              <div className="flex items-center gap-2">
+                <Check size={16} className="text-green-600" />
+                <h2 className="text-[16px] font-medium text-claude-ink">解析完成</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-[14px]">
+                <div className="bg-claude-canvas rounded-[8px] px-3 py-2">
+                  <span className="text-claude-muted-soft">姓名</span>
+                  <p className="text-claude-ink font-medium">{summary.name}</p>
                 </div>
-              )}
+                <div className="bg-claude-canvas rounded-[8px] px-3 py-2">
+                  <span className="text-claude-muted-soft">教育</span>
+                  <p className="text-claude-ink font-medium">{summary.eduCount} 段</p>
+                </div>
+                <div className="bg-claude-canvas rounded-[8px] px-3 py-2">
+                  <span className="text-claude-muted-soft">实习/工作</span>
+                  <p className="text-claude-ink font-medium">{summary.expCount} 段</p>
+                </div>
+                <div className="bg-claude-canvas rounded-[8px] px-3 py-2">
+                  <span className="text-claude-muted-soft">项目</span>
+                  <p className="text-claude-ink font-medium">{summary.projCount} 个</p>
+                </div>
+              </div>
+              <button
+                onClick={goToLibrary}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-[14px] font-medium rounded-[10px] bg-claude-ink text-claude-on-dark hover:bg-claude-surface-dark-elevated transition-colors"
+              >
+                进入简历库 <ArrowRight size={16} />
+              </button>
+              <p className="text-center text-[12px] text-claude-muted-soft">
+                AI 已为你推荐匹配的岗位方向，点击上方进入查看
+              </p>
             </motion.div>
-          </AnimatePresence>
+          )}
         </div>
       </main>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-lg border-t border-[#E2E8F0]">
-        <div className="max-w-2xl mx-auto flex items-center px-5 h-16">
-          <Link href="/" className="flex-1 flex items-center justify-center gap-2 py-2">
-            <span className="w-7 h-7 rounded-lg bg-[#F2F3FF] flex items-center justify-center text-sm">📋</span>
-            <span className="text-[13px] font-semibold text-[#0052D9]">简历库</span>
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-claude-surface-dark">
+        <div className="max-w-[720px] mx-auto flex items-center px-6 h-12">
+          <span className="flex-1 flex items-center justify-center gap-1.5 py-2">
+            <span className="text-[13px] font-medium text-claude-on-dark">首页</span>
+          </span>
+          <Link href="/library" className="flex-1 flex items-center justify-center gap-1.5 py-2 text-claude-on-dark-soft hover:text-claude-on-dark transition-colors">
+            <span className="text-[13px]">简历库</span>
           </Link>
-          <Link href="/ai-write" className="flex-1 flex items-center justify-center gap-2 py-2 text-[#64748B] hover:text-[#0F172A] transition-colors">
-            <span className="w-7 h-7 rounded-lg bg-[#F1F5F9] flex items-center justify-center text-sm">✍️</span>
-            <span className="text-[13px] font-medium">AI 写作</span>
+          <Link href="/ai-write" className="flex-1 flex items-center justify-center gap-1.5 py-2 text-claude-on-dark-soft hover:text-claude-on-dark transition-colors">
+            <span className="text-[13px]">AI 写作</span>
           </Link>
         </div>
       </nav>
 
       {/* API Key Modal */}
-      {apiKeyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-5" onClick={() => setApiKeyModal(false)}>
+      {showApiModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#272728]/20 p-5" onClick={() => setShowApiModal(false)}>
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
+            initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-claude-surface-card rounded-[16px] border border-claude-hairline p-6 w-full max-w-[380px] shadow-xl space-y-4"
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl"
           >
-            <div className="w-10 h-10 rounded-xl bg-[#F2F3FF] flex items-center justify-center mb-3">
-              <Settings size={18} className="text-[#0052D9]" />
-            </div>
-            <h3 className="text-[15px] font-bold text-[#0F172A] mb-1">DeepSeek API Key</h3>
-            <p className="text-[12px] text-[#64748B] mb-4 leading-relaxed">
-              Key 仅存储在浏览器，不上传任何服务器。
-              <a href="https://platform.deepseek.com/api_keys" target="_blank" className="text-[#0052D9] font-medium ml-1">
-                获取 Key →
-              </a>
+            <h2 className="text-[16px] font-medium text-claude-ink">DeepSeek API Key</h2>
+            <p className="text-[13px] text-claude-muted">
+              Key only stored in browser.  <a href="https://platform.deepseek.com/api_keys" target="_blank" className="text-claude-primary underline">get key →</a>
             </p>
             <input
-              type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-..."
-              className="w-full px-3.5 py-2.5 bg-[#F8FAFC] rounded-xl text-[13px] border border-[#E2E8F0] focus:border-[#0052D9] focus:outline-none mb-3 transition-colors"
+              className="w-full text-[14px] text-claude-ink bg-claude-canvas rounded-[8px] px-3 py-2.5 border border-claude-hairline focus:border-claude-primary focus:outline-none"
+              autoFocus
             />
             <div className="flex gap-2">
-              <button onClick={() => saveApiKey(apiKey)} className="flex-1 py-2.5 bg-[#0052D9] text-white text-[13px] font-medium rounded-xl hover:bg-[#366EF4] transition-colors">
-                保存
+              <button onClick={() => saveApiKey("")} className="flex-1 py-2.5 text-[13px] text-claude-muted rounded-[8px] hover:bg-claude-surface transition-colors">
+                清除
               </button>
-              <button onClick={() => setApiKeyModal(false)} className="px-4 py-2.5 text-[13px] text-[#64748B] rounded-xl hover:bg-[#F1F5F9] transition-colors">
-                取消
+              <button onClick={() => saveApiKey(apiKey)} className="flex-1 py-2.5 bg-claude-primary text-claude-on-primary text-[13px] font-medium rounded-[8px] hover:bg-claude-primary-active transition-colors">
+                保存
               </button>
             </div>
           </motion.div>
         </div>
       )}
-
-      {/* Footer hint */}
-      <div className="text-center py-8">
-        <p className="text-[11px] text-[#94A3B8]">配合浏览器插件「简历库助手」使用更高效</p>
-        <a href="https://github.com/c845427500-creator/resume-toolkit" target="_blank" className="text-[11px] text-[#0052D9] font-medium mt-1 inline-block">
-          查看源码 →
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-2.5">
-        <span className="text-[13px]">{icon}</span>
-        <h4 className="text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider">{title}</h4>
-        <div className="flex-1 h-px bg-[#E2E8F0]" />
-      </div>
-      {children}
     </div>
   );
 }

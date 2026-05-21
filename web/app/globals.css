@@ -1,22 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand: #0052D9;
-  --color-brand-light: #366EF4;
-  --color-brand-dark: #003CAB;
-  --color-brand-bg: #F2F3FF;
-  --color-surface: #FFFFFF;
-  --color-muted: #F8FAFC;
-  --color-border: #E2E8F0;
-  --color-text: #0F172A;
-  --color-text-secondary: #64748B;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
+  /* Page canvas — warm cream, like chestnut flesh */
+  --color-claude-canvas: #faf6f0;
+
+  /* Surface for grouped areas — slightly deeper sand */
+  --color-claude-surface: #f3ece2;
+
+  /* Card — nearly white but warm, contrasts with canvas */
+  --color-claude-surface-card: #fefcf9;
+
+  /* Pressed / inset states */
+  --color-claude-cream-strong: #e8ddd0;
+
+  /* Primary accent — roasted chestnut shell */
+  --color-claude-primary: #b8754a;
+
+  /* Active / hover — darker chestnut */
+  --color-claude-primary-active: #8f5532;
+
+  /* Headings & section titles — deep espresso */
+  --color-claude-ink: #2d2218;
+
+  /* Body text — warm medium brown */
+  --color-claude-body: #5c4a3a;
+
+  /* Strong body text */
+  --color-claude-body-strong: #3d2e20;
+
+  /* Muted secondary text — warm taupe */
+  --color-claude-muted: #8c7b6a;
+
+  /* Soft muted — placeholders, captions */
+  --color-claude-muted-soft: #b0a090;
+
+  /* Hairline border — warm sand */
+  --color-claude-hairline: #e5d9c8;
+
+  /* Subtle hairline */
+  --color-claude-hairline-soft: #ede3d6;
+
+  /* Bottom nav — deep warm espresso */
+  --color-claude-surface-dark: #221a12;
+
+  /* Dark elevated */
+  --color-claude-surface-dark-elevated: #30271e;
+
+  /* Light text on dark backgrounds */
+  --color-claude-on-dark: #faf6f0;
+
+  /* Muted text on dark */
+  --color-claude-on-dark-soft: #a89888;
+
+  /* Text on primary buttons */
+  --color-claude-on-primary: #ffffff;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
+  color: #3d2e20;
+  background: #faf6f0;
 }

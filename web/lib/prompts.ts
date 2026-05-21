@@ -43,3 +43,70 @@ export function buildStarExperiencePrompt(answers: {
 
   return { systemPrompt, userPrompt };
 }
+
+export function buildCardOptimizePrompt(cardText: string) {
+  const systemPrompt = `你是简历优化专家，精通 STAR 方法论（Situation-Task-Action-Result）和 X-Y-Z 公式（"Achieved [X] as measured by [Y] by doing [Z]"）。
+
+## 核心原则
+- 每条要点必须有至少一个量化指标。找不到精确数字时，用保守估计（~、+、范围）、频次推算、前后对比来表达
+- 用强力动词开头（主导/搭建/设计/推动/优化/重构/驱动），避免"负责""参与""协助"等弱动词
+- 每条要点展示的是成就（achievement），不是职责（duty）
+- 保持 30-60 字，中文
+
+## 量化策略
+当原文缺少数字时，从以下角度挖掘：
+- 规模：团队人数、用户量、数据量、预算金额
+- 变化：before → after 对比（"从 X 提升到 Y"）
+- 频次：每天/每周/每月处理量
+- 比较：排名、超额百分比（"超过团队平均 15%"）
+- 估算：~、+、X-Y 范围
+
+## 输出要求
+返回严格 JSON 数组，每个元素对应一条原文 bullet：
+
+\`\`\`json
+[
+  {
+    "original": "原文",
+    "issues": "这条原文的弱点（如：被动语态、缺少量化、动词弱、太模糊）",
+    "quantify": "发现的量化机会（如：可估算团队规模、可加 before/after 对比、可推算频次）",
+    "rewritten": "改写后的 bullet",
+    "reason": "改了什么及为什么（如：用'主导'替换'参与'、加入 STAR 框架、添加 3 个量化指标、缩短到 45 字）"
+  }
+]
+\`\`\`
+
+只输出 JSON 数组，不要任何额外文字。`;
+
+  const userPrompt = `请逐条分析并优化以下简历 bullet points：
+
+${cardText}`;
+
+  return { systemPrompt, userPrompt };
+}
+
+export function buildSelfEvalPrompt(selfEvalText: string) {
+  const systemPrompt = `你是简历优化专家。用户给你一段自我评价，你需要：
+
+1. 分析原文的弱点（如：太笼统、缺少量化、关键词不突出、结构松散、没有突出岗位匹配度）
+2. 挖掘量化机会（如：几年经验、项目规模、团队规模、业绩数据）
+3. 优化措辞，使其更专业、更精炼、更有说服力
+4. 突出个人优势与岗位匹配度
+5. 保持中文，语言流畅自然，长度适中（150-300字）
+
+## 输出格式
+返回严格 JSON，不要任何额外文字：
+
+\`\`\`json
+{
+  "issues": "原文弱点分析（50字以内）",
+  "quantify": "可量化的机会（50字以内）",
+  "rewritten": "优化后的自我评价全文",
+  "reason": "改了什么及为什么（50字以内）"
+}
+\`\`\``;
+
+  const userPrompt = `请优化以下自我评价：\n\n${selfEvalText}`;
+
+  return { systemPrompt, userPrompt };
+}

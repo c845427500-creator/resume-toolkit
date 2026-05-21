@@ -7,7 +7,7 @@ import Link from "next/link";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { optimizeCard, optimizeSelfEval } from "@/lib/deepseek-client";
+import { optimizeCard, optimizeSelfEval, type AiSelfEval } from "@/lib/deepseek-client";
 import { matchCardsByDirection } from "@/lib/resume-parser";
 import {
   initStore, saveStore, getLibrary,
@@ -274,7 +274,7 @@ function ResumeCard({
   item, section, apiKey, onUpdate, onAiOptimize, onDelete, forceEdit, saveAllKey,
 }: {
   item: CardItem; section: CardSection; apiKey: string;
-  onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets">>) => void;
+  onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets" | "aiBullets">>) => void;
   onAiOptimize: () => Promise<void>;
   onDelete: () => void;
   forceEdit?: boolean;
@@ -282,10 +282,11 @@ function ResumeCard({
 }) {
   const [editing, setEditing] = useState(false);
   const isEditing = editing || forceEdit;
-  const [showAi, setShowAi] = useState(false);
+  const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
   const [optimizing, setOptimizing] = useState(false);
+  const [allAccepted, setAllAccepted] = useState(false);
+  const hasAi = !!(item.aiBullets && item.aiBullets.length > 0);
   const bulletRefObjs = useRef<{ current: HTMLDivElement | null }[]>([]);
-  // Ensure enough ref objects exist for each bullet
   if (bulletRefObjs.current.length < item.bullets.length) {
     for (let i = bulletRefObjs.current.length; i < item.bullets.length; i++) {
       bulletRefObjs.current.push({ current: null });
@@ -294,7 +295,109 @@ function ResumeCard({
 
   useEffect(() => { if (saveAllKey != null && saveAllKey > 0) setEditing(false); }, [saveAllKey]);
 
-  const handleOptimize = async () => { setOptimizing(true); await onAiOptimize(); setOptimizing(false); setShowAi(true); };
+  const handleOptimize = async () => { setAllAccepted(false); setOptimizing(true); await onAiOptimize(); setOptimizing(false); setAiViewMode("compare"); };
+
+  const handleAcceptOne = (i: number) => {
+    if (!item.aiBullets?.[i]) return;
+    const updated = [...item.bullets];
+    updated[i] = { text: item.aiBullets[i].rewritten, tags: [] };
+    onUpdate({ bullets: updated });
+  };
+
+  const handleAcceptAll = () => {
+    if (!item.aiBullets) return;
+    const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
+    onUpdate({ bullets: updated });
+    setAllAccepted(true);
+    setAiViewMode("original");
+  };
+
+  const handleUndoAll = () => {
+    if (!item.aiBullets) return;
+    const original = item.aiBullets.map((ab) => ({ text: ab.original, tags: [] as string[] }));
+    onUpdate({ bullets: original, aiBullets: undefined });
+    setAllAccepted(false);
+    setAiViewMode("original");
+  };
+
+  const handleDismissAi = () => {
+    onUpdate({ aiBullets: undefined });
+    setAllAccepted(false);
+    setAiViewMode("original");
+  };
+
+  // Shared AI comparison panel
+  const aiComparisonPanel = item.aiBullets && aiViewMode !== "original" && (
+    <div className="space-y-3 pt-1">
+      {aiViewMode === "compare" ? (
+        item.aiBullets.map((ab, i) => (
+          <div key={i} className="space-y-1.5 bg-claude-canvas rounded-[8px] p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-orange-50/50 rounded-[6px] px-3 py-2 border border-orange-100">
+                <div className="text-[10px] font-medium text-orange-600 mb-1">原文</div>
+                <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.original)}</div>
+              </div>
+              <div className="bg-emerald-50/50 rounded-[6px] px-3 py-2 border border-emerald-100">
+                <div className="text-[10px] font-medium text-emerald-600 mb-1">AI 润色</div>
+                <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.rewritten)}</div>
+              </div>
+            </div>
+            {ab.issues && (
+              <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+                <span className="font-medium text-claude-muted">弱点：</span>{ab.issues}
+              </div>
+            )}
+            {ab.quantify && (
+              <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+                <span className="font-medium text-claude-muted">量化机会：</span>{ab.quantify}
+              </div>
+            )}
+            <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+              <span className="font-medium text-claude-muted">改写说明：</span>{ab.reason}
+            </div>
+            {!allAccepted && (
+              <button
+                onClick={() => handleAcceptOne(i)}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+              >
+                接受此条
+              </button>
+            )}
+          </div>
+        ))
+      ) : (
+        item.aiBullets.map((ab, i) => (
+          <div key={i} className="space-y-1 bg-claude-canvas rounded-[8px] p-3">
+            <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.rewritten)}</div>
+            <div className="text-[11px] text-claude-muted-soft mt-1 pt-1 border-t border-claude-hairline-soft">{ab.reason}</div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  // Shared AI control bar
+  const aiControlBar = hasAi && (
+    <div className="flex items-center justify-between pt-2 border-t border-claude-hairline-soft">
+      <span className="text-[12px] text-claude-muted-soft">
+        {allAccepted ? `已接受全部 (${item.aiBullets!.length} 条)` : `AI 润色完成 (${item.aiBullets!.length} 条建议)`}
+      </span>
+      <div className="flex items-center gap-1">
+        {allAccepted ? (
+          <button onClick={handleUndoAll} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink transition-colors">撤销全部</button>
+        ) : (
+          <>
+            <button onClick={() => setAiViewMode("original")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "original" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>原文</button>
+            <button onClick={() => setAiViewMode("ai")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "ai" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>AI 版</button>
+            <button onClick={() => setAiViewMode("compare")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "compare" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>对照</button>
+            <span className="text-claude-hairline mx-1">|</span>
+            <button onClick={handleAcceptAll} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">全部接受</button>
+            <button onClick={handleDismissAi} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-red-500 transition-colors">放弃</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="bg-claude-surface-card rounded-[10px] border border-claude-hairline p-4 pl-7 space-y-3">
@@ -318,61 +421,87 @@ function ResumeCard({
             </>
           )}
         </div>
+        {/* Top-right action buttons */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {isEditing ? (
+            <>
+              {!forceEdit && (
+                <button onClick={() => setEditing(false)} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="取消">
+                  <X size={14} />
+                </button>
+              )}
+              <button onClick={() => setEditing(false)} className="w-7 h-7 flex items-center justify-center rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors" title="保存">
+                <Save size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              {!forceEdit && (
+                <button onClick={() => setEditing(true)} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="编辑">
+                  <Edit3 size={14} />
+                </button>
+              )}
+            </>
+          )}
+          <button onClick={onDelete} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors ml-0.5" title="删除">
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Bullets */}
       <div className="space-y-1.5">
         {isEditing ? (
-          item.bullets.map((b, idx) => {
-            const refObj = bulletRefObjs.current[idx];
-            return (
-              <div key={idx} className="space-y-1">
-                <MarkdownToolbar editorRef={refObj} />
-                <RichTextarea
-                  editorRef={refObj}
-                  value={b.text}
-                  onChange={(md) => {
-                    const updated = [...item.bullets];
-                    updated[idx] = { ...updated[idx], text: md };
-                    onUpdate({ bullets: updated });
-                  }}
-                  className="w-full text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
-                  placeholder="输入要点…"
-                />
-              </div>
-            );
-          })
+          <>
+            {item.bullets.map((b, idx) => {
+              const refObj = bulletRefObjs.current[idx];
+              return (
+                <div key={idx} className="space-y-1">
+                  <MarkdownToolbar editorRef={refObj} />
+                  <RichTextarea
+                    editorRef={refObj}
+                    value={b.text}
+                    onChange={(md) => {
+                      const updated = [...item.bullets];
+                      updated[idx] = { ...updated[idx], text: md };
+                      onUpdate({ bullets: updated });
+                    }}
+                    className="w-full text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
+                    placeholder="输入要点…"
+                  />
+                </div>
+              );
+            })}
+            {/* AI comparison shown during editing */}
+            {aiComparisonPanel}
+          </>
         ) : (
-          <div className="space-y-1.5">
-            {(showAi && item.aiBullets ? item.aiBullets : item.bullets).map((b, idx) => (
-              <div key={idx} className="text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden">
-                <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
-              </div>
-            ))}
-          </div>
+          (aiViewMode !== "original" && item.aiBullets) ? (
+            aiComparisonPanel
+          ) : (
+            <div className="space-y-1.5">
+              {item.bullets.map((b, idx) => (
+                <div key={idx} className="text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden">
+                  <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 
-      {/* Bottom action bar — matches SelfEval layout */}
-      <div className="flex items-center justify-between pt-1">
-        <span className="text-[12px] text-claude-muted-soft">{item.bullets.length} 条要点</span>
-        <div className="flex items-center gap-1">
-          {!forceEdit && (
-            <button
-              onClick={() => setEditing(!editing)}
-              className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors"
-            >
-              {editing ? <><Save size={12} />保存</> : <><Edit3 size={12} />编辑</>}
-            </button>
-          )}
+      {/* AI control bar — shown when AI exists */}
+      {aiControlBar}
+
+      {/* AI optimize bar — below bullets during editing, always available */}
+      {isEditing && (
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-[12px] text-claude-muted-soft">{item.bullets.length} 条要点</span>
           <button onClick={handleOptimize} disabled={!apiKey || optimizing} className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 transition-colors">
-            {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 优化中</> : <><Sparkles size={12} />AI 优化</>}
-          </button>
-          <button onClick={onDelete} className="w-8 h-8 flex items-center justify-center rounded-[6px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors">
-            <Trash2 size={13} />
+            {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 润色中</> : <><Sparkles size={12} />{hasAi ? "重新 AI 润色" : "AI 润色"}</>}
           </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -658,12 +787,11 @@ function SkillsEditor({ skills, onUpdate }: { skills: Record<string, string[]>; 
     const { [oldCat]: items, ...rest } = skills;
     onUpdate({ ...rest, [newCat]: items || [] });
   };
-  const updateItem = (cat: string, idx: number, val: string) => {
+  const removeItem = (cat: string, idx: number) => {
     const items = [...(skills[cat] || [])];
-    if (!val.trim()) { items.splice(idx, 1); } else { items[idx] = val; }
+    items.splice(idx, 1);
     onUpdate({ ...skills, [cat]: items });
   };
-  const addItem = (cat: string) => onUpdate({ ...skills, [cat]: [...(skills[cat] || []), ""] });
   const removeCat = (cat: string) => {
     const { [cat]: _, ...rest } = skills;
     onUpdate(rest);
@@ -684,12 +812,22 @@ function SkillsEditor({ skills, onUpdate }: { skills: Record<string, string[]>; 
           </div>
           <div className="flex flex-wrap gap-1.5 mb-1">
             {items.map((item, idx) => (
-              <div key={idx} className="flex items-center gap-0.5 bg-claude-canvas rounded-[5px] px-2 py-1 border border-claude-hairline">
-                <input value={item} onChange={(e) => updateItem(cat, idx, e.target.value)} className="text-[12px] text-claude-ink bg-transparent outline-none w-[100px]" />
-                <button onClick={() => updateItem(cat, idx, "")} className="text-claude-muted-soft hover:text-red-500"><X size={10} /></button>
-              </div>
+              <span key={idx} className="inline-flex items-center gap-1 text-[12px] bg-claude-cream-strong text-claude-body rounded-full px-2.5 py-1 border border-claude-hairline">
+                {item}
+                <button onClick={() => removeItem(cat, idx)} className="text-claude-muted-soft hover:text-red-500"><X size={10} /></button>
+              </span>
             ))}
-            <button onClick={() => addItem(cat)} className="text-[12px] text-claude-muted-soft hover:text-claude-primary"><Plus size={12} /></button>
+            <input
+              placeholder="输入技能，回车添加"
+              className="text-[12px] text-claude-ink bg-claude-canvas rounded-full px-2.5 py-1 border border-claude-hairline focus:border-claude-primary focus:outline-none w-[130px] placeholder:text-[11px] placeholder:text-claude-muted-soft"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                  addTag(cat, e.currentTarget.value.trim());
+                  e.currentTarget.value = "";
+                  e.preventDefault();
+                }
+              }}
+            />
           </div>
           {/* Preset tag chips */}
           {SKILL_TAG_PRESETS[cat] && (
@@ -712,12 +850,33 @@ function SkillsEditor({ skills, onUpdate }: { skills: Record<string, string[]>; 
 }
 
 // ─── SelfEvalEditor ───────────────────────────────
-function SelfEvalEditor({ selfEval, apiKey, onSave, onAiOptimize }: { selfEval: string; apiKey: string; onSave: (v: string) => void; onAiOptimize: () => Promise<void> }) {
+function SelfEvalEditor({ selfEval, apiKey, onSave, onAiOptimize }: { selfEval: string; apiKey: string; onSave: (v: string) => void; onAiOptimize: () => Promise<AiSelfEval | null> }) {
   const [text, setText] = useState(selfEval);
   const [optimizing, setOptimizing] = useState(false);
+  const [aiResult, setAiResult] = useState<AiSelfEval | null>(null);
+  const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
   const editorRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setText(selfEval); }, [selfEval]);
-  const handleOptimize = async () => { setOptimizing(true); await onAiOptimize(); setOptimizing(false); };
+  const handleOptimize = async () => {
+    setOptimizing(true);
+    const result = await onAiOptimize();
+    if (result) { setAiResult(result); setAiViewMode("compare"); }
+    setOptimizing(false);
+  };
+
+  const handleAccept = () => {
+    if (!aiResult) return;
+    onSave(aiResult.rewritten);
+    setText(aiResult.rewritten);
+    setAiResult(null);
+    setAiViewMode("original");
+  };
+
+  const handleDismiss = () => {
+    setAiResult(null);
+    setAiViewMode("original");
+  };
+
   return (
     <div className="space-y-2">
       <MarkdownToolbar editorRef={editorRef} />
@@ -728,12 +887,70 @@ function SelfEvalEditor({ selfEval, apiKey, onSave, onAiOptimize }: { selfEval: 
         placeholder="自我评价..."
         className="w-full text-[14px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[8px] px-3 py-2 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[60px]"
       />
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] text-claude-muted-soft">{text.length} 字</span>
-        <button onClick={handleOptimize} disabled={!apiKey || !text.trim() || optimizing} className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 transition-colors">
-          {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 优化中</> : <><Sparkles size={12} />AI 润色</>}
-        </button>
-      </div>
+
+      {/* AI comparison view */}
+      {aiResult && (
+        <div className="space-y-2">
+          {aiViewMode !== "original" && (
+            <>
+              {aiViewMode === "compare" ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-orange-50/50 rounded-[6px] px-3 py-2 border border-orange-100">
+                      <div className="text-[10px] font-medium text-orange-600 mb-1">原文</div>
+                      <div className="text-[13px] leading-relaxed text-claude-body">{selfEval}</div>
+                    </div>
+                    <div className="bg-emerald-50/50 rounded-[6px] px-3 py-2 border border-emerald-100">
+                      <div className="text-[10px] font-medium text-emerald-600 mb-1">AI 润色</div>
+                      <div className="text-[13px] leading-relaxed text-claude-body">{aiResult.rewritten}</div>
+                    </div>
+                  </div>
+                  {aiResult.issues && (
+                    <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+                      <span className="font-medium text-claude-muted">弱点：</span>{aiResult.issues}
+                    </div>
+                  )}
+                  {aiResult.quantify && (
+                    <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+                      <span className="font-medium text-claude-muted">量化机会：</span>{aiResult.quantify}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
+                    <span className="font-medium text-claude-muted">改写说明：</span>{aiResult.reason}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-claude-canvas rounded-[6px] px-3 py-2">
+                  <div className="text-[13px] leading-relaxed text-claude-body">{aiResult.rewritten}</div>
+                  <div className="text-[11px] text-claude-muted-soft mt-2 pt-2 border-t border-claude-hairline-soft">{aiResult.reason}</div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* AI control bar */}
+          <div className="flex items-center justify-between pt-1 border-t border-claude-hairline-soft">
+            <span className="text-[12px] text-claude-muted-soft">AI 润色完成</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setAiViewMode("original")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "original" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>原文</button>
+              <button onClick={() => setAiViewMode("ai")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "ai" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>AI 版</button>
+              <button onClick={() => setAiViewMode("compare")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "compare" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>对照</button>
+              <span className="text-claude-hairline mx-1">|</span>
+              <button onClick={handleAccept} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">接受</button>
+              <button onClick={handleDismiss} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-red-500 transition-colors">放弃</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!aiResult && (
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] text-claude-muted-soft">{text.length} 字</span>
+          <button onClick={handleOptimize} disabled={!apiKey || !text.trim() || optimizing} className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 transition-colors">
+            {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 润色中</> : <><Sparkles size={12} />AI 润色</>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -825,13 +1042,27 @@ export default function LibraryPage() {
   const [showAddDirection, setShowAddDirection] = useState(false);
   const [newDirection, setNewDirection] = useState("");
   const [addingDirection, setAddingDirection] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportSelection, setExportSelection] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [editingSections, setEditingSections] = useState<Set<string>>(new Set());
   const [editingSubSections, setEditingSubSections] = useState<Set<string>>(new Set());
   const [saveAllKey, setSaveAllKey] = useState(0);
   const [undoSnapshot, setUndoSnapshot] = useState<Library | null>(null);
   useEffect(() => { setUndoSnapshot(null); }, [activeDirection]);
-  const [hiddenDefaultDirs, setHiddenDefaultDirs] = useState<Set<string>>(new Set());
+  const [hiddenDefaultDirs, setHiddenDefaultDirs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const saved = localStorage.getItem("resume_hidden_dirs");
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("resume_hidden_dirs", JSON.stringify([...hiddenDefaultDirs]));
+    }
+  }, [hiddenDefaultDirs]);
   const [showBackToTop, setShowBackToTop] = useState(false);
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > window.innerHeight);
@@ -869,7 +1100,7 @@ export default function LibraryPage() {
   const library = useMemo(() => store ? getLibrary(store, activeDirection) : { experiences: [], projects: [], campus: [], social: [], skills: {}, selfEval: "" }, [store, activeDirection]);
   const allDirections = useMemo(() => {
     const defaults = DEFAULT_JOB_TYPES.filter(d => !store?.customDirections?.includes(d) && !hiddenDefaultDirs.has(d));
-    const customs = store?.customDirections || [];
+    const customs = (store?.customDirections || []).filter(d => !hiddenDefaultDirs.has(d));
     return [...defaults, ...customs];
   }, [store?.customDirections, hiddenDefaultDirs]);
   const totalItems = library.experiences.length + library.projects.length + library.campus.length + library.social.length;
@@ -908,6 +1139,21 @@ export default function LibraryPage() {
     updateStore((s) => reorderCards(s, activeDirection, section, fromIdx, toIdx));
   };
 
+  const handleAddCard = (section: CardSection) => {
+    const newCard: CardItem = {
+      id: `card-${Date.now()}`,
+      name: "",
+      role: "",
+      period: "",
+      bullets: [{ text: "", tags: [] }],
+    };
+    updateStore((s) => {
+      const lib = s.libraries[activeDirection];
+      const items = [...lib[section], newCard];
+      return { ...s, libraries: { ...s.libraries, [activeDirection]: { ...lib, [section]: items } } };
+    });
+  };
+
   const handleAiOptimizeCard = async (section: CardSection, cardId: string, item: CardItem) => {
     if (!apiKey) return;
     const text = item.bullets.map(b => b.text).join("\n");
@@ -915,13 +1161,129 @@ export default function LibraryPage() {
     if (result) updateStore((s) => setAiVersion(s, activeDirection, section, cardId, result));
   };
 
-  const handleAiSelfEval = async () => {
-    if (!apiKey || !library.selfEval.trim()) return;
-    const result = await optimizeSelfEval(apiKey, library.selfEval);
-    if (result) updateStore((s) => ({ ...s, libraries: { ...s.libraries, [activeDirection]: { ...s.libraries[activeDirection], selfEval: result } } }));
+  const handleAiSelfEval = async (): Promise<AiSelfEval | null> => {
+    if (!apiKey || !library.selfEval.trim()) return null;
+    return await optimizeSelfEval(apiKey, library.selfEval);
   };
 
   const handleCopy = () => { navigator.clipboard.writeText(resumeText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  // Export modal helpers
+  const allExportKeys = () => {
+    const keys = new Set<string>();
+    keys.add("personal");
+    if (store?.shared.education.undergrad?.schoolName) keys.add("edu:undergrad");
+    if (store?.shared.education.master?.schoolName) keys.add("edu:master");
+    if (store?.shared.education.highSchool?.schoolName) keys.add("edu:highSchool");
+    if ((store?.shared.family?.length ?? 0) > 0) keys.add("family");
+    if (Object.keys(library.skills).length > 0) keys.add("skills");
+    if (library.selfEval) keys.add("selfEval");
+    library.experiences.forEach((c) => keys.add(`exp:${c.id}`));
+    library.projects.forEach((c) => keys.add(`proj:${c.id}`));
+    library.campus.forEach((c) => keys.add(`cam:${c.id}`));
+    library.social.forEach((c) => keys.add(`soc:${c.id}`));
+    return keys;
+  };
+
+  const selectAllExport = () => setExportSelection(allExportKeys());
+  const deselectAllExport = () => setExportSelection(new Set());
+  const toggleExportKey = (key: string) => {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const selectSection = (prefix: string, cards: CardItem[]) => {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      cards.forEach((c) => next.add(`${prefix}:${c.id}`));
+      return next;
+    });
+  };
+  const deselectSection = (prefix: string, cards: CardItem[]) => {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      cards.forEach((c) => next.delete(`${prefix}:${c.id}`));
+      return next;
+    });
+  };
+
+  const handleExportFiltered = () => {
+    if (!store) return;
+    const sel = exportSelection;
+    const lines: string[] = [];
+    const p = store.shared.personal;
+    const edu = store.shared.education;
+
+    if (sel.has("personal")) {
+      if (p.name) lines.push(p.name);
+      if (p.phone || p.email) lines.push(`${p.phone} · ${p.email}`);
+      lines.push("");
+    }
+    if (sel.has("edu:undergrad") || sel.has("edu:master") || sel.has("edu:highSchool")) {
+      lines.push("▎教育经历");
+      if (sel.has("edu:master") && edu.master?.schoolName) {
+        lines.push(`${edu.master.schoolName}  ${edu.master.degree}  ${edu.master.period}`);
+        if (edu.master.notes) lines.push(edu.master.notes);
+      }
+      if (sel.has("edu:undergrad") && edu.undergrad?.schoolName) {
+        lines.push(`${edu.undergrad.schoolName}  ${edu.undergrad.degree}  ${edu.undergrad.period}`);
+        if (edu.undergrad.notes) lines.push(edu.undergrad.notes);
+      }
+      if (sel.has("edu:highSchool") && edu.highSchool?.schoolName) {
+        lines.push(`${edu.highSchool.schoolName}  高中  —`);
+      }
+      lines.push("");
+    }
+    if (sel.has("family") && (store.shared.family?.length ?? 0) > 0) {
+      lines.push("▎家庭成员");
+      store.shared.family.forEach((m) => {
+        lines.push(`${m.name}  ${m.relation}  ${m.workUnit}  ${m.position}`);
+      });
+      lines.push("");
+    }
+    const cardSections: [string, string, CardItem[]][] = [
+      ["工作/实习经历", "exp", library.experiences],
+      ["项目经历", "proj", library.projects],
+      ["校园经历", "cam", library.campus],
+      ["社会/实践经历", "soc", library.social],
+    ];
+    cardSections.forEach(([title, prefix, items]) => {
+      const selected = items.filter((c) => sel.has(`${prefix}:${c.id}`));
+      if (selected.length > 0) {
+        lines.push(`▎${title}`);
+        selected.forEach((e) => {
+          lines.push(`${e.name}  ${e.role}  ${e.period}`);
+          e.bullets.forEach((b) => lines.push(`• ${b.text}`));
+          lines.push("");
+        });
+      }
+    });
+    if (sel.has("selfEval") && library.selfEval) {
+      lines.push("▎自我评价");
+      lines.push(library.selfEval);
+      lines.push("");
+    }
+    if (sel.has("skills")) {
+      lines.push("▎技能");
+      Object.entries(library.skills).forEach(([cat, items]) => {
+        if (items.length > 0) lines.push(`${cat}：${items.join("、")}`);
+      });
+    }
+    const text = lines.join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "简历.txt"; a.click();
+    URL.revokeObjectURL(url);
+    setShowExportModal(false);
+  };
+
+  const openExportModal = () => {
+    setExportSelection(allExportKeys());
+    setShowExportModal(true);
+  };
 
   const handleAddDirection = async () => {
     const dir = newDirection.trim();
@@ -1036,10 +1398,10 @@ export default function LibraryPage() {
                 <button
                   onClick={() => {
                     if (DEFAULT_JOB_TYPES.includes(dir)) {
-                      setHiddenDefaultDirs(prev => new Set(prev).add(dir));
-                      updateStore((s) => {
-                        const { [dir]: _, ...rest } = s.libraries;
-                        return { ...s, libraries: rest };
+                      setHiddenDefaultDirs(prev => {
+                        const next = new Set(prev).add(dir);
+                        localStorage.setItem("resume_hidden_dirs", JSON.stringify([...next]));
+                        return next;
                       });
                     } else {
                       updateStore((s) => removeCustomDirection(s, dir));
@@ -1102,7 +1464,7 @@ export default function LibraryPage() {
             一键保存
           </button>
           <div className="flex-1" />
-          <button onClick={() => exportForExtension({ personal: store.shared.personal, education: store.shared.education, experiences: library.experiences, projects: library.projects, campus: library.campus, social: library.social, skills: library.skills, selfEval: library.selfEval }, activeDirection)} className="flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors">
+          <button onClick={openExportModal} className="flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors">
             <Download size={12} />导出
           </button>
           <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors">
@@ -1155,10 +1517,10 @@ export default function LibraryPage() {
                             editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
-                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={10} />保存</button>
+                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
                               </div>
                             ) : (
-                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={12} /></button>
+                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={14} /></button>
                             )
                           }
                         >
@@ -1248,10 +1610,10 @@ export default function LibraryPage() {
                             editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
-                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={10} />保存</button>
+                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
                               </div>
                             ) : (
-                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={12} /></button>
+                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={14} /></button>
                             )
                           }
                         >
@@ -1333,10 +1695,10 @@ export default function LibraryPage() {
                             editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
-                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={10} />保存</button>
+                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
                               </div>
                             ) : (
-                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={12} /></button>
+                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={14} /></button>
                             )
                           }
                         >
@@ -1391,10 +1753,10 @@ export default function LibraryPage() {
                             editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
-                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={10} />保存</button>
+                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
                               </div>
                             ) : (
-                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={12} /></button>
+                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={14} /></button>
                             )
                           }
                         >
@@ -1451,10 +1813,10 @@ export default function LibraryPage() {
                             editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
-                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={10} />保存</button>
+                                <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
                               </div>
                             ) : (
-                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={12} /></button>
+                              <button onClick={toggle} className="text-claude-muted-soft hover:text-claude-ink transition-colors"><Edit3 size={14} /></button>
                             )
                           }
                         >
@@ -1510,7 +1872,6 @@ export default function LibraryPage() {
                                     {subsectionOrder.map((subKey) => {
                                       const meta = SECTION_META.find((m) => m.key === subKey)!;
                                       const items = library[subKey];
-                                      if (items.length === 0) return null;
                                       const subEditing = editingSubSections.has(subKey);
                                       const toggleSub = () => setEditingSubSections((prev) => {
                                         const next = new Set(prev);
@@ -1521,11 +1882,11 @@ export default function LibraryPage() {
                                         <div className="flex items-center gap-1">
                                           {subEditing ? (
                                             <button onClick={toggleSub} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5">
-                                              <Save size={10} />保存
+                                              <Save size={14} />
                                             </button>
                                           ) : (
                                             <button onClick={toggleSub} className="text-claude-muted-soft hover:text-claude-ink transition-colors">
-                                              <Edit3 size={12} />
+                                              <Edit3 size={14} />
                                             </button>
                                           )}
                                         </div>
@@ -1555,6 +1916,9 @@ export default function LibraryPage() {
                                                 ))}
                                               </div>
                                             </SortableContext>
+                                            <button onClick={() => handleAddCard(subKey)} className="mt-3 flex items-center gap-1 text-[12px] text-claude-muted hover:text-claude-primary transition-colors">
+                                              <Plus size={12} />添加经历
+                                            </button>
                                           </DndContext>
                                         </SortableSection>
                                       );
@@ -1605,6 +1969,106 @@ export default function LibraryPage() {
           </Link>
         </div>
       </nav>
+
+      {/* Export Filter Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#272728]/20 p-5" onClick={() => setShowExportModal(false)}>
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="bg-claude-surface-card rounded-[16px] border border-claude-hairline p-6 w-full max-w-[440px] shadow-xl space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-[16px] font-medium text-claude-ink">导出筛选</h2>
+
+            {/* Top bar: select all / deselect all */}
+            <div className="flex items-center gap-3">
+              <button onClick={selectAllExport} className="text-[12px] text-claude-primary hover:text-claude-primary-active font-medium">全选</button>
+              <button onClick={deselectAllExport} className="text-[12px] text-claude-muted hover:text-claude-ink">取消全选</button>
+            </div>
+
+            {/* Personal */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={exportSelection.has("personal")} onChange={() => toggleExportKey("personal")} className="accent-claude-primary w-3.5 h-3.5" />
+                <span className="text-[13px] text-claude-ink">个人信息</span>
+              </label>
+            </div>
+
+            {/* Education */}
+            <div className="space-y-1.5">
+              <p className="text-[13px] font-medium text-claude-ink">教育经历</p>
+              {store?.shared.education.undergrad?.schoolName && (
+                <label className="flex items-center gap-2 cursor-pointer ml-1">
+                  <input type="checkbox" checked={exportSelection.has("edu:undergrad")} onChange={() => toggleExportKey("edu:undergrad")} className="accent-claude-primary w-3.5 h-3.5" />
+                  <span className="text-[12px] text-claude-muted">本科 · {store.shared.education.undergrad.schoolName}</span>
+                </label>
+              )}
+              {store?.shared.education.master?.schoolName && (
+                <label className="flex items-center gap-2 cursor-pointer ml-1">
+                  <input type="checkbox" checked={exportSelection.has("edu:master")} onChange={() => toggleExportKey("edu:master")} className="accent-claude-primary w-3.5 h-3.5" />
+                  <span className="text-[12px] text-claude-muted">硕士 · {store.shared.education.master.schoolName}</span>
+                </label>
+              )}
+              {store?.shared.education.highSchool?.schoolName && (
+                <label className="flex items-center gap-2 cursor-pointer ml-1">
+                  <input type="checkbox" checked={exportSelection.has("edu:highSchool")} onChange={() => toggleExportKey("edu:highSchool")} className="accent-claude-primary w-3.5 h-3.5" />
+                  <span className="text-[12px] text-claude-muted">高中 · {store.shared.education.highSchool.schoolName}</span>
+                </label>
+              )}
+            </div>
+
+            {/* Family */}
+            {(store?.shared.family?.length ?? 0) > 0 && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={exportSelection.has("family")} onChange={() => toggleExportKey("family")} className="accent-claude-primary w-3.5 h-3.5" />
+                <span className="text-[13px] text-claude-ink">家庭成员 ({store!.shared.family.length} 人)</span>
+              </label>
+            )}
+
+            {/* Skills */}
+            {Object.keys(library.skills).length > 0 && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={exportSelection.has("skills")} onChange={() => toggleExportKey("skills")} className="accent-claude-primary w-3.5 h-3.5" />
+                <span className="text-[13px] text-claude-ink">技能</span>
+              </label>
+            )}
+
+            {/* SelfEval */}
+            {library.selfEval && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={exportSelection.has("selfEval")} onChange={() => toggleExportKey("selfEval")} className="accent-claude-primary w-3.5 h-3.5" />
+                <span className="text-[13px] text-claude-ink">自我评价</span>
+              </label>
+            )}
+
+            {/* Card sections */}
+            {(["experiences", "projects", "campus", "social"] as CardSection[]).map((sec) => {
+              const items = library[sec];
+              if (items.length === 0) return null;
+              const prefix = sec === "experiences" ? "exp" : sec === "projects" ? "proj" : sec === "campus" ? "cam" : "soc";
+              const meta = SECTION_META.find((m) => m.key === sec)!;
+              const selectedCount = items.filter((c) => exportSelection.has(`${prefix}:${c.id}`)).length;
+              return (
+                <div key={sec} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-claude-ink">{meta.title}</span>
+                    <button onClick={() => selectSection(prefix, items)} className="text-[11px] text-claude-primary hover:text-claude-primary-active">全选</button>
+                    <button onClick={() => deselectSection(prefix, items)} className="text-[11px] text-claude-muted hover:text-claude-ink">取消</button>
+                    <span className="text-[11px] text-claude-muted-soft">{selectedCount}/{items.length}</span>
+                  </div>
+                  {items.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 cursor-pointer ml-1">
+                      <input type="checkbox" checked={exportSelection.has(`${prefix}:${c.id}`)} onChange={() => toggleExportKey(`${prefix}:${c.id}`)} className="accent-claude-primary w-3.5 h-3.5" />
+                      <span className="text-[12px] text-claude-muted truncate">{c.name || "(空)"} · {c.role}</span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowExportModal(false)} className="flex-1 py-2.5 text-[13px] text-claude-muted rounded-[8px] hover:bg-claude-surface transition-colors">取消</button>
+              <button onClick={handleExportFiltered} className="flex-1 py-2.5 bg-claude-primary text-claude-on-primary text-[13px] font-medium rounded-[8px] hover:bg-claude-primary-active transition-colors">导出选中内容</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* API Key Modal */}
       {apiKeyModal && (

@@ -1,6 +1,4 @@
-"use client";
-
-import { buildOptimizePrompt, buildStarExperiencePrompt } from "./prompts";
+import { buildOptimizePrompt, buildStarExperiencePrompt, buildCardOptimizePrompt, buildSelfEvalPrompt } from "./prompts";
 
 async function fetchDeepSeek(
   apiKey: string,
@@ -51,4 +49,58 @@ export async function generateExperience(
 ): Promise<string | null> {
   const { systemPrompt, userPrompt } = buildStarExperiencePrompt(answers);
   return fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.7, 500);
+}
+
+export interface AiBullet {
+  original: string;
+  issues: string;
+  quantify: string;
+  rewritten: string;
+  reason: string;
+}
+
+export async function optimizeCard(
+  apiKey: string,
+  cardText: string
+): Promise<AiBullet[] | null> {
+  const { systemPrompt, userPrompt } = buildCardOptimizePrompt(cardText);
+  const result = await fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 4000);
+  if (!result) return null;
+
+  try {
+    // Extract JSON from response (may be wrapped in ```json blocks)
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.trim();
+    const parsed = JSON.parse(jsonStr);
+    if (Array.isArray(parsed)) return parsed as AiBullet[];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export interface AiSelfEval {
+  issues: string;
+  quantify: string;
+  rewritten: string;
+  reason: string;
+}
+
+export async function optimizeSelfEval(
+  apiKey: string,
+  selfEvalText: string
+): Promise<AiSelfEval | null> {
+  const { systemPrompt, userPrompt } = buildSelfEvalPrompt(selfEvalText);
+  const result = await fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 4000);
+  if (!result) return null;
+
+  try {
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed && typeof parsed.rewritten === "string") return parsed as AiSelfEval;
+    return null;
+  } catch {
+    return null;
+  }
 }

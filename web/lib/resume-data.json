@@ -2,26 +2,50 @@
   "personal": {
     "name": "蔡琳",
     "phone": "18817238535",
-    "email": "c845427500@163.com"
+    "email": "c845427500@163.com",
+    "idType": "身份证"
   },
   "education": [
     {
       "school": "中山大学",
-      "degree": "岭南学院 金融 专业硕士",
+      "degree": "金融硕士",
+      "college": "岭南学院",
       "period": "2025.09 – 2027.06",
-      "notes": "研究方向：行为金融学（AI方向）；相关课程：基础心理学/视听传播/微观经济学"
+      "major": "金融",
+      "majorCategory": "经济学",
+      "fullTime": "全日制",
+      "unifiedEnrollment": "是",
+      "notes": "研究方向：行为金融学（AI方向）；相关课程：基础心理学/视听传播/微观经济学",
+      "honors": "",
+      "relevantCourses": "基础心理学、视听传播、微观经济学、行为金融学",
+      "courseGrades": "",
+      "gpa": "",
+      "ranking": "",
+      "advisor": ""
     },
     {
       "school": "复旦大学",
-      "degree": "化学系 化学 / 经济学与金融学（2+X） 本科",
+      "degree": "化学 / 经济学与金融学 本科",
+      "college": "化学系",
       "period": "2020.09 – 2024.09",
-      "notes": "2022-2023年复旦化学系专业奖学金；复旦化学实验创新设计大赛一等奖"
+      "major": "化学 / 经济学与金融学（2+X）",
+      "majorCategory": "理学/经济学",
+      "fullTime": "全日制",
+      "unifiedEnrollment": "是",
+      "notes": "2022-2023年复旦化学系专业奖学金；复旦化学实验创新设计大赛一等奖",
+      "honors": "2022-2023年复旦化学系专业奖学金；复旦化学实验创新设计大赛一等奖",
+      "relevantCourses": "",
+      "courseGrades": "",
+      "gpa": "",
+      "ranking": "",
+      "advisor": ""
     }
   ],
   "experiences": [
     {
       "id": "yuexiu-fund",
       "company": "越秀产业基金",
+      "department": "",
       "role": "S基金投资实习生",
       "period": "2026.04 – 至今",
       "category": "实习",
@@ -48,6 +72,7 @@
     {
       "id": "guotai-haitong",
       "company": "国泰海通证券",
+      "department": "研究所化工组",
       "role": "化工组（新财富团队）行业研究实习生",
       "period": "2025.12 – 2026.04",
       "category": "实习",
@@ -74,6 +99,7 @@
     {
       "id": "hongnei-tech",
       "company": "红内数科（小红书内容营销官方合作服务商）",
+      "department": "",
       "role": "数字营销实习生",
       "period": "2023.01 – 2023.03",
       "category": "实习",
@@ -96,6 +122,7 @@
     {
       "id": "macau-bank",
       "company": "澳门发展银行",
+      "department": "",
       "role": "项目实习生",
       "period": "2022.08 – 2022.09",
       "category": "实习",
@@ -141,7 +168,7 @@
     },
     {
       "id": "innotion-competition",
-      "company": "意略明INNOTHON校园创新挑战赛",
+      "name": "意略明INNOTHON校园创新挑战赛",
       "role": "青少年个性化保健药品研究项目 队长",
       "period": "2021.10 – 2021.11",
       "category": "项目",
@@ -158,7 +185,7 @@
       ]
     }
   ],
-  "leadership": [
+  "campus": [
     {
       "id": "fda-president",
       "org": "复旦大学天文协会",
@@ -211,19 +238,6 @@
       ]
     },
     {
-      "id": "xhs-personal",
-      "org": "小红书个人IP运营",
-      "role": "个人摄影账号",
-      "period": "持续运营",
-      "tags": ["运营", "内容"],
-      "bullets": [
-        {
-          "text": "熟悉小红书创作者平台机制及玩法，根据热门话题和趋势策划并创作摄影作品内容，累计转评赞8k+，产出爆款图文，单篇阅读量2w+、转赞评2k+。",
-          "tags": ["运营", "内容", "数据"]
-        }
-      ]
-    },
-    {
       "id": "teaching-photography",
       "org": "摄影培训活动",
       "role": "培训讲师",
@@ -233,6 +247,21 @@
         {
           "text": "负责为复旦大学社政学院分团委成员做摄影培训，系统梳理摄影基础知识与活动摄影技巧，独立设计培训内容（PPT、讲稿、互动环节），助力成员提升活动摄影能力，保障后续各类团学活动影像记录质量。",
           "tags": ["运营", "培训"]
+        }
+      ]
+    }
+  ],
+  "social": [
+    {
+      "id": "xhs-personal",
+      "org": "小红书个人IP运营",
+      "role": "个人摄影账号",
+      "period": "持续运营",
+      "tags": ["运营", "内容"],
+      "bullets": [
+        {
+          "text": "熟悉小红书创作者平台机制及玩法，根据热门话题和趋势策划并创作摄影作品内容，累计转评赞8k+，产出爆款图文，单篇阅读量2w+、转赞评2k+。",
+          "tags": ["运营", "内容", "数据"]
         }
       ]
     },
@@ -268,8 +297,9 @@
     }
   ],
   "skills": {
-    "金融工具": ["Wind", "Choice", "Excel（透视表/Vlookup/高级函数）", "PPT", "Word"],
-    "数据分析": ["Python", "SQL", "Stata（数据清洗与可视化）"],
+    "金融工具": ["Wind", "Choice"],
+    "办公软件": ["Excel（透视表/Vlookup/高级函数）", "PPT", "Word"],
+    "编程与数据工具": ["Python", "SQL", "Stata（数据清洗与可视化）"],
     "AI工具": ["ChatGPT", "Gemini", "DeepSeek", "Claude", "OpenClaw", "Codex"],
     "内容创作": ["Pr/剪映（视频）", "Ps/Canva/Procreate（设计）", "公众号运营"],
     "语言": ["普通话二级甲等", "英语 CET-6（流利）", "粤语"],

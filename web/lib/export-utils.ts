@@ -1,7 +1,4 @@
-"use client";
-
 export function exportForExtension(data: any, jobType: string) {
-  // Build a flat structure optimized for the extension popup
   const exportData = {
     exportedAt: new Date().toISOString(),
     jobType,
@@ -9,7 +6,8 @@ export function exportForExtension(data: any, jobType: string) {
     education: data.education,
     experiences: data.experiences.map((e: any) => ({
       id: e.id,
-      company: e.company,
+      company: e.name,
+      department: e.department || "",
       role: e.role,
       period: e.period,
       bullets: e.bullets.map((b: any) => b.text),
@@ -21,14 +19,22 @@ export function exportForExtension(data: any, jobType: string) {
       period: p.period,
       bullets: p.bullets.map((b: any) => b.text),
     })),
-    leadership: data.leadership.map((l: any) => ({
-      id: l.id,
-      org: l.org,
-      role: l.role,
-      period: l.period,
-      bullets: l.bullets.map((b: any) => b.text),
+    campus: (data.campus || []).map((c: any) => ({
+      id: c.id,
+      org: c.name,
+      role: c.role,
+      period: c.period,
+      bullets: c.bullets.map((b: any) => b.text),
+    })),
+    social: (data.social || []).map((s: any) => ({
+      id: s.id,
+      org: s.name,
+      role: s.role,
+      period: s.period,
+      bullets: s.bullets.map((b: any) => b.text),
     })),
     skills: data.skills,
+    selfEval: data.selfEval || "",
   };
 
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
