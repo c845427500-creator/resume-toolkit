@@ -7,7 +7,7 @@ import Link from "next/link";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { optimizeCard, optimizeSelfEval, type AiSelfEval } from "@/lib/deepseek-client";
+import { optimizeCard, optimizeSingleBullet, optimizeSelfEval, type AiBullet, type AiSelfEval } from "@/lib/deepseek-client";
 import { matchCardsByDirection } from "@/lib/resume-parser";
 import {
   initStore, saveStore, getLibrary,
@@ -271,11 +271,12 @@ function SortableCard({ id, children }: { id: string; children: React.ReactNode 
 
 // ─── ResumeCard ───────────────────────────────────
 function ResumeCard({
-  item, section, apiKey, onUpdate, onAiOptimize, onDelete, forceEdit, saveAllKey,
+  item, section, apiKey, onUpdate, onAiOptimize, onReoptimizeBullet, onDelete, forceEdit, saveAllKey,
 }: {
   item: CardItem; section: CardSection; apiKey: string;
   onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets" | "aiBullets">>) => void;
   onAiOptimize: () => Promise<void>;
+  onReoptimizeBullet: (bulletIdx: number) => Promise<void>;
   onDelete: () => void;
   forceEdit?: boolean;
   saveAllKey?: number;
@@ -284,6 +285,7 @@ function ResumeCard({
   const isEditing = editing || forceEdit;
   const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
   const [optimizing, setOptimizing] = useState(false);
+  const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
   const [allAccepted, setAllAccepted] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const snapshotRef = useRef<{ text: string; tags: string[] }[] | null>(null);
@@ -296,7 +298,20 @@ function ResumeCard({
     }
   }
 
-  useEffect(() => { if (saveAllKey != null && saveAllKey > 0) setEditing(false); }, [saveAllKey]);
+  useEffect(() => {
+    if (saveAllKey != null && saveAllKey > 0) {
+      // Auto-save AI version if unaccepted AI exists
+      if (hasUnacceptedAi && item.aiBullets) {
+        const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
+        onUpdate({ bullets: updated, aiBullets: undefined });
+        setAllAccepted(false);
+        setAiViewMode("original");
+      }
+      setShowSaveConfirm(false);
+      snapshotRef.current = null;
+      setEditing(false);
+    }
+  }, [saveAllKey]);
 
   // Capture snapshot when entering edit mode
   useEffect(() => {
@@ -415,14 +430,23 @@ function ResumeCard({
             <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
               <span className="font-medium text-claude-muted">改写说明：</span>{ab.reason}
             </div>
-            {!allAccepted && (
+            <div className="flex items-center gap-1.5">
+              {!allAccepted && (
+                <button
+                  onClick={() => handleAcceptOne(i)}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                >
+                  接受此条
+                </button>
+              )}
               <button
-                onClick={() => handleAcceptOne(i)}
-                className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                onClick={async () => { setReoptimizingIdx(i); await onReoptimizeBullet(i); setReoptimizingIdx(null); }}
+                disabled={reoptimizingIdx !== null}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink disabled:opacity-50 transition-colors"
               >
-                接受此条
+                {reoptimizingIdx === i ? "优化中…" : "重新优化此条"}
               </button>
-            )}
+            </div>
           </div>
         ))
       ) : (
@@ -1231,6 +1255,21 @@ export default function LibraryPage() {
     if (result) updateStore((s) => setAiVersion(s, activeDirection, section, cardId, result));
   };
 
+  const handleAiReoptimizeBullet = async (
+    section: CardSection,
+    cardId: string,
+    bulletIdx: number,
+    aiBullets: AiBullet[]
+  ): Promise<AiBullet | null> => {
+    if (!apiKey) return null;
+    const result = await optimizeSingleBullet(apiKey, aiBullets[bulletIdx].original);
+    if (!result) return null;
+    const updated = [...aiBullets];
+    updated[bulletIdx] = result;
+    updateStore((s) => setAiVersion(s, activeDirection, section, cardId, updated));
+    return result;
+  };
+
   const handleAiSelfEval = async (): Promise<AiSelfEval | null> => {
     if (!apiKey || !library.selfEval.trim()) return null;
     return await optimizeSelfEval(apiKey, library.selfEval);
@@ -1528,7 +1567,6 @@ export default function LibraryPage() {
               setEditingSections(new Set());
               setEditingSubSections(new Set());
             }}
-            disabled={editingSections.size === 0 && editingSubSections.size === 0}
             className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface disabled:opacity-40 transition-colors"
           >
             一键保存
@@ -1980,6 +2018,7 @@ export default function LibraryPage() {
                                                       forceEdit={subEditing} saveAllKey={saveAllKey}
                                                       onUpdate={(updates) => updateStore((s) => updateCard(s, activeDirection, subKey, item.id, updates))}
                                                       onAiOptimize={() => handleAiOptimizeCard(subKey, item.id, item)}
+                                                      onReoptimizeBullet={async (idx) => { await handleAiReoptimizeBullet(subKey, item.id, idx, item.aiBullets!); }}
                                                       onDelete={() => updateStore((s) => deleteCard(s, activeDirection, subKey, item.id))}
                                                     />
                                                   </SortableCard>

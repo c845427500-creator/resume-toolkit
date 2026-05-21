@@ -68,11 +68,29 @@ export async function optimizeCard(
   if (!result) return null;
 
   try {
-    // Extract JSON from response (may be wrapped in ```json blocks)
     const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.trim();
     const parsed = JSON.parse(jsonStr);
     if (Array.isArray(parsed)) return parsed as AiBullet[];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function optimizeSingleBullet(
+  apiKey: string,
+  bulletText: string
+): Promise<AiBullet | null> {
+  const { systemPrompt, userPrompt } = buildCardOptimizePrompt(bulletText);
+  const result = await fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 2000);
+  if (!result) return null;
+
+  try {
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.trim();
+    const parsed = JSON.parse(jsonStr);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed[0] as AiBullet;
     return null;
   } catch {
     return null;
