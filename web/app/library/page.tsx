@@ -430,23 +430,25 @@ function ResumeCard({
             <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
               <span className="font-medium text-claude-muted">改写说明：</span>{ab.reason}
             </div>
-            <div className="flex items-center gap-1.5">
-              {!allAccepted && (
+            {item.bullets.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                {!allAccepted && (
+                  <button
+                    onClick={() => handleAcceptOne(i)}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                  >
+                    接受此条
+                  </button>
+                )}
                 <button
-                  onClick={() => handleAcceptOne(i)}
-                  className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                  onClick={async () => { setReoptimizingIdx(i); await onReoptimizeBullet(i); setReoptimizingIdx(null); }}
+                  disabled={reoptimizingIdx !== null}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink disabled:opacity-50 transition-colors"
                 >
-                  接受此条
+                  {reoptimizingIdx === i ? "优化中…" : "重新优化此条"}
                 </button>
-              )}
-              <button
-                onClick={async () => { setReoptimizingIdx(i); await onReoptimizeBullet(i); setReoptimizingIdx(null); }}
-                disabled={reoptimizingIdx !== null}
-                className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink disabled:opacity-50 transition-colors"
-              >
-                {reoptimizingIdx === i ? "优化中…" : "重新优化此条"}
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         ))
       ) : (
@@ -1250,7 +1252,10 @@ export default function LibraryPage() {
 
   const handleAiOptimizeCard = async (section: CardSection, cardId: string, item: CardItem) => {
     if (!apiKey) return;
-    const text = item.bullets.map(b => b.text).join("\n");
+    // Preserve true originals across re-optimizations
+    const text = item.aiBullets
+      ? item.aiBullets.map(ab => ab.original).join("\n")
+      : item.bullets.map(b => b.text).join("\n");
     const result = await optimizeCard(apiKey, text);
     if (result) updateStore((s) => setAiVersion(s, activeDirection, section, cardId, result));
   };
