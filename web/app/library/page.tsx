@@ -285,7 +285,10 @@ function ResumeCard({
   const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
   const [optimizing, setOptimizing] = useState(false);
   const [allAccepted, setAllAccepted] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const snapshotRef = useRef<{ text: string; tags: string[] }[] | null>(null);
   const hasAi = !!(item.aiBullets && item.aiBullets.length > 0);
+  const hasUnacceptedAi = hasAi && !allAccepted;
   const bulletRefObjs = useRef<{ current: HTMLDivElement | null }[]>([]);
   if (bulletRefObjs.current.length < item.bullets.length) {
     for (let i = bulletRefObjs.current.length; i < item.bullets.length; i++) {
@@ -294,6 +297,16 @@ function ResumeCard({
   }
 
   useEffect(() => { if (saveAllKey != null && saveAllKey > 0) setEditing(false); }, [saveAllKey]);
+
+  // Capture snapshot when entering edit mode
+  useEffect(() => {
+    if (isEditing && !snapshotRef.current) {
+      snapshotRef.current = item.bullets.map((b) => ({ ...b }));
+    }
+    if (!isEditing) {
+      snapshotRef.current = null;
+    }
+  }, [isEditing]);
 
   const handleOptimize = async () => { setAllAccepted(false); setOptimizing(true); await onAiOptimize(); setOptimizing(false); setAiViewMode("compare"); };
 
@@ -324,6 +337,53 @@ function ResumeCard({
     onUpdate({ aiBullets: undefined });
     setAllAccepted(false);
     setAiViewMode("original");
+    setShowSaveConfirm(false);
+  };
+
+  const handleCancel = () => {
+    // Cancel edit: restore snapshot and clear any AI results
+    if (snapshotRef.current) {
+      onUpdate({ bullets: snapshotRef.current, aiBullets: undefined });
+    }
+    setAllAccepted(false);
+    setAiViewMode("original");
+    setShowSaveConfirm(false);
+    snapshotRef.current = null;
+    setEditing(false);
+  };
+
+  const handleSave = () => {
+    // If there are unaccepted AI results, require user to choose a version
+    if (hasUnacceptedAi) {
+      setShowSaveConfirm(true);
+      return;
+    }
+    // No AI or already accepted — just exit edit mode
+    setShowSaveConfirm(false);
+    snapshotRef.current = null;
+    setEditing(false);
+  };
+
+  const handleSaveAi = () => {
+    // Apply AI version to all bullets, clear aiBullets, exit edit mode
+    if (!item.aiBullets) return;
+    const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
+    onUpdate({ bullets: updated, aiBullets: undefined });
+    setAllAccepted(false);
+    setAiViewMode("original");
+    setShowSaveConfirm(false);
+    snapshotRef.current = null;
+    setEditing(false);
+  };
+
+  const handleSaveOriginal = () => {
+    // Discard AI results, keep current (possibly edited) bullets, exit edit mode
+    onUpdate({ aiBullets: undefined });
+    setAllAccepted(false);
+    setAiViewMode("original");
+    setShowSaveConfirm(false);
+    snapshotRef.current = null;
+    setEditing(false);
   };
 
   // Shared AI comparison panel
@@ -425,12 +485,22 @@ function ResumeCard({
         <div className="flex items-center gap-0.5 shrink-0">
           {isEditing ? (
             <>
+              {showSaveConfirm && (
+                <div className="absolute right-2 top-12 z-10 bg-claude-surface-card rounded-[10px] border border-claude-hairline p-3 shadow-lg space-y-2 min-w-[200px]">
+                  <p className="text-[12px] text-claude-muted text-center">AI 优化尚未接受，保存哪个版本？</p>
+                  <div className="flex flex-col gap-1.5">
+                    <button onClick={handleSaveAi} className="text-[12px] font-medium px-3 py-1.5 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">保存 AI 优化版</button>
+                    <button onClick={handleSaveOriginal} className="text-[12px] font-medium px-3 py-1.5 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink transition-colors">保存原文</button>
+                    <button onClick={() => setShowSaveConfirm(false)} className="text-[11px] text-claude-muted-soft hover:text-claude-ink transition-colors pt-0.5">取消</button>
+                  </div>
+                </div>
+              )}
               {!forceEdit && (
-                <button onClick={() => setEditing(false)} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="取消">
+                <button onClick={handleCancel} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="取消">
                   <X size={14} />
                 </button>
               )}
-              <button onClick={() => setEditing(false)} className="w-7 h-7 flex items-center justify-center rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors" title="保存">
+              <button onClick={handleSave} className="w-7 h-7 flex items-center justify-center rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors" title="保存">
                 <Save size={14} />
               </button>
             </>
