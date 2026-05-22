@@ -1,4 +1,4 @@
-import { buildOptimizePrompt, buildStarExperiencePrompt, buildCardOptimizePrompt, buildSelfEvalPrompt } from "./prompts";
+import { buildOptimizePrompt, buildStarExperiencePrompt, buildCardOptimizePrompt, buildSelfEvalPrompt, buildAutoPolishPrompt, buildDirectedPolishPrompt } from "./prompts";
 
 async function fetchDeepSeek(
   apiKey: string,
@@ -102,6 +102,17 @@ export interface AiSelfEval {
   quantify: string;
   rewritten: string;
   reason: string;
+}
+
+export async function polishText(
+  apiKey: string,
+  text: string,
+  requirement?: string
+): Promise<string | null> {
+  const { systemPrompt, userPrompt } = requirement
+    ? buildDirectedPolishPrompt(text, requirement)
+    : buildAutoPolishPrompt(text);
+  return fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 4000);
 }
 
 export async function optimizeSelfEval(

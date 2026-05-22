@@ -2,12 +2,13 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp } from "lucide-react";
+import { Copy, Check, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { matchCardsByDirection } from "@/lib/resume-parser";
+import AiModal from "./ai-modal";
 import {
   initStore, saveStore, getLibrary,
   updatePersonal, updateEducation, updateFamily, updateCustomFields,
@@ -270,13 +271,14 @@ function SortableCard({ id, children }: { id: string; children: React.ReactNode 
 
 // ─── ResumeCard ───────────────────────────────────
 function ResumeCard({
-  item, onUpdate, onDelete, forceEdit, saveAllKey,
+  item, onUpdate, onDelete, forceEdit, saveAllKey, onSelectForAi,
 }: {
   item: CardItem;
   onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets">>) => void;
   onDelete: () => void;
   forceEdit?: boolean;
   saveAllKey?: number;
+  onSelectForAi?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const isEditing = editing || forceEdit;
@@ -373,11 +375,18 @@ function ResumeCard({
             );
           })
         ) : (
-          item.bullets.map((b, idx) => (
-            <div key={idx} className="text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden">
-              <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
-            </div>
-          ))
+          <div
+            className={onSelectForAi ? "cursor-pointer" : ""}
+            onClick={(e) => {
+              if (onSelectForAi) { e.stopPropagation(); onSelectForAi(); }
+            }}
+          >
+            {item.bullets.map((b, idx) => (
+              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`}>
+                <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -847,6 +856,10 @@ export default function LibraryPage() {
   const [editingSubSections, setEditingSubSections] = useState<Set<string>>(new Set());
   const [saveAllKey, setSaveAllKey] = useState(0);
   const [undoSnapshot, setUndoSnapshot] = useState<Library | null>(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [selectedCardText, setSelectedCardText] = useState("");
+  const [selectedCardLabel, setSelectedCardLabel] = useState("");
+  const [selectedCardSource, setSelectedCardSource] = useState<{ type: "selfEval" } | { type: "card"; section: string; cardId: string } | null>(null);
   useEffect(() => { setUndoSnapshot(null); }, [activeDirection]);
   const [hiddenDefaultDirs, setHiddenDefaultDirs] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -950,6 +963,25 @@ export default function LibraryPage() {
       const items = [...lib[section], newCard];
       return { ...s, libraries: { ...s.libraries, [activeDirection]: { ...lib, [section]: items } } };
     });
+  };
+
+  const handleAcceptPolish = (text: string) => {
+    if (!selectedCardSource) return;
+    if (selectedCardSource.type === "selfEval") {
+      updateStore((s) => updateSelfEval(s, activeDirection, text));
+    } else if (selectedCardSource.type === "card") {
+      const bullets = text
+        .split(/\n/)
+        .map((b) => b.replace(/^[•·\-]\s*/, "").trim())
+        .filter((b) => b.length > 0)
+        .map((b) => ({ text: b, tags: [] as string[] }));
+      if (bullets.length > 0) {
+        updateStore((s) => updateCard(s, activeDirection, selectedCardSource.section as CardSection, selectedCardSource.cardId, { bullets }));
+      }
+    }
+    setSelectedCardSource(null);
+    setSelectedCardText("");
+    setSelectedCardLabel("");
   };
 
   const handleCopy = () => { navigator.clipboard.writeText(resumeText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
@@ -1617,7 +1649,16 @@ export default function LibraryPage() {
                           ) : (
                             <div>
                               {se.trim() ? (
-                                <p className="text-[14px] leading-relaxed text-claude-body whitespace-pre-wrap">{renderMarkdown(se)}</p>
+                                <p
+                                  className={`text-[14px] leading-relaxed text-claude-body whitespace-pre-wrap ${aiModalOpen ? "cursor-pointer hover:ring-1 hover:ring-claude-primary/30 rounded-[6px] px-1 -mx-1 transition-all" : ""}`}
+                                  onClick={() => {
+                                    if (aiModalOpen) {
+                                      setSelectedCardText(se);
+                                      setSelectedCardLabel("自我评价");
+                                      setSelectedCardSource({ type: "selfEval" });
+                                    }
+                                  }}
+                                >{renderMarkdown(se)}</p>
                               ) : (
                                 <p className="text-[13px] text-claude-muted-soft">暂无自我评价，点击编辑添加</p>
                               )}
@@ -1695,6 +1736,11 @@ export default function LibraryPage() {
                                                       forceEdit={subEditing} saveAllKey={saveAllKey}
                                                       onUpdate={(updates) => updateStore((s) => updateCard(s, activeDirection, subKey, item.id, updates))}
                                                       onDelete={() => updateStore((s) => deleteCard(s, activeDirection, subKey, item.id))}
+                                                      onSelectForAi={aiModalOpen ? () => {
+                                                        setSelectedCardText(item.bullets.map((b) => b.text).join("\n"));
+                                                        setSelectedCardLabel(`${item.name || "(空)"} · ${item.role || ""}`);
+                                                        setSelectedCardSource({ type: "card", section: subKey, cardId: item.id });
+                                                      } : undefined}
                                                     />
                                                   </SortableCard>
                                                 ))}
@@ -1739,6 +1785,15 @@ export default function LibraryPage() {
         </button>
       )}
 
+      {/* Floating AI button */}
+      <button
+        onClick={() => { setAiModalOpen(true); setSelectedCardText(""); setSelectedCardLabel(""); setSelectedCardSource(null); }}
+        className="fixed bottom-28 right-6 z-40 w-12 h-12 rounded-full bg-claude-primary text-claude-on-primary shadow-lg flex items-center justify-center hover:bg-claude-primary-active transition-all hover:scale-105 active:scale-95"
+        title="AI 助手"
+      >
+        <Sparkles size={20} />
+      </button>
+
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-claude-surface-dark">
         <div className="max-w-[1200px] mx-auto flex items-center px-6 h-12">
@@ -1748,9 +1803,7 @@ export default function LibraryPage() {
           <span className="flex-1 flex items-center justify-center gap-1.5 py-2">
             <span className="text-[13px] font-medium text-claude-on-dark">简历库</span>
           </span>
-          <Link href="/ai-write" className="flex-1 flex items-center justify-center gap-1.5 py-2 text-claude-on-dark-soft hover:text-claude-on-dark transition-colors">
-            <span className="text-[13px]">AI 写作</span>
-          </Link>
+          <span className="flex-1" />
         </div>
       </nav>
 
@@ -1868,6 +1921,16 @@ export default function LibraryPage() {
           </motion.div>
         </div>
       )}
+
+      {/* AI Modal */}
+      <AiModal
+        open={aiModalOpen}
+        onClose={() => { setAiModalOpen(false); setSelectedCardText(""); setSelectedCardLabel(""); setSelectedCardSource(null); }}
+        apiKey={apiKey}
+        selectedText={selectedCardText}
+        selectedLabel={selectedCardLabel}
+        onAcceptPolish={handleAcceptPolish}
+      />
     </div>
   );
 }

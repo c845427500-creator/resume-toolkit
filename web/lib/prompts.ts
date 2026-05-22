@@ -85,6 +85,33 @@ ${cardText}`;
   return { systemPrompt, userPrompt };
 }
 
+export function buildAutoPolishPrompt(text: string) {
+  const systemPrompt = `你是简历优化专家。用户给你一段简历文本（可能是自我评价或经历要点），请直接优化它。
+
+要求：
+1. 保持原意和事实不变，不要编造经历或数据
+2. 用更强有力的动词和更专业的措辞，避免"负责""参与""协助"等弱动词
+3. 如有量化机会，加入保守估算（~、+、范围）
+4. 保持中文，语言流畅自然，长度与原文相当或略长
+5. 直接输出优化后的文本，不要任何解释、标记或引号`;
+
+  const userPrompt = `请优化以下文本：\n\n${text}`;
+  return { systemPrompt, userPrompt };
+}
+
+export function buildDirectedPolishPrompt(text: string, requirement: string) {
+  const systemPrompt = `你是简历优化专家。用户给你一段简历文本和具体的润色要求，请严格按照要求优化文本。
+
+规则：
+1. 严格遵循用户的润色要求来改写
+2. 保持原意和事实不变，不要编造经历或数据
+3. 保持中文，语言流畅自然
+4. 直接输出优化后的文本，不要任何解释、标记或引号`;
+
+  const userPrompt = `原文：\n${text}\n\n润色要求：\n${requirement}\n\n请输出优化后的文本：`;
+  return { systemPrompt, userPrompt };
+}
+
 export function buildSelfEvalPrompt(selfEvalText: string) {
   const systemPrompt = `你是简历优化专家。用户给你一段自我评价，你需要：
 
