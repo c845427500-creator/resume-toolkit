@@ -177,6 +177,38 @@ export function buildDirectedPolishPrompt(text: string, requirement: string) {
   return { systemPrompt, userPrompt };
 }
 
+export function buildDirectedPolishReasonPrompt(text: string, requirement: string) {
+  const systemPrompt = `你是顶级简历优化专家。用户给你一段简历文本和具体的润色要求，请严格按要求改写。
+
+## 改写原则
+
+1. **严格遵循用户要求**，不能偏离用户指定的润色方向
+2. **保持事实不变**，不编造经历或数据
+3. **优先使用 X-Y-Z 公式**："通过 [Z]，实现 [X]，衡量标准为 [Y]"
+4. **替换弱动词**："负责/参与/协助/帮助" → 强力动词（主导/搭建/推动/优化/设计/重构）
+5. **寻找量化机会**：用保守估算（~、范围、+）注入数字，找不到则量化活动
+6. **成就 > 职责**：不是"做了什么"而是"做成了什么"
+
+## 量化工具箱
+
+金钱/时间/百分比/规模/质量/对比 — 6 类指标至少选 1 个
+没有精确数字 → 保守估算 ~ / 范围 X-Y / 下限 X+ / 频次推算 / 比例拆分
+
+## 输出格式
+
+返回严格 JSON，不要任何额外文字：
+
+\`\`\`json
+{
+  "rewritten": "优化后的文本",
+  "reason": "改了什么及为什么（50字以内）"
+}
+\`\`\``;
+
+  const userPrompt = `原文：\n${text}\n\n润色要求：\n${requirement}\n\n请输出 JSON：`;
+  return { systemPrompt, userPrompt };
+}
+
 export function buildSelfEvalPrompt(selfEvalText: string) {
   const systemPrompt = `你是简历优化专家。用户给你一段自我评价，你需要：
 

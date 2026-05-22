@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Loader2, X, Check, Copy, RotateCcw, ChevronRight, ChevronLeft, PenLine, Wand2 } from "lucide-react";
-import { polishText, generateExperience } from "@/lib/deepseek-client";
+import { polishText, polishTextWithReason, generateExperience, optimizeCard, optimizeSingleBullet, type AiBullet } from "@/lib/deepseek-client";
 
 type AiTab = "polish" | "write";
 type WriteStep = "intro" | "asking" | "done";
@@ -47,9 +47,23 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   // ─── Polish state ──────────────────────────
   const [polishMode, setPolishMode] = useState<"directed" | "auto" | null>(null);
   const [requirement, setRequirement] = useState("");
-  const [polishedText, setPolishedText] = useState("");
   const [polishing, setPolishing] = useState(false);
   const [polishComplete, setPolishComplete] = useState(false);
+  const [polishResults, setPolishResults] = useState<AiBullet[]>([]);
+
+  // Bullet detection: split selectedText by newlines
+  const bullets = useMemo(() => {
+    if (!selectedText) return [];
+    return selectedText.split("\n").filter((b) => b.trim()).map((b) => b.trim());
+  }, [selectedText]);
+
+  const [activeBulletIdx, setActiveBulletIdx] = useState<number | null>(null); // null = all
+  const multiBullet = bullets.length > 1;
+
+  // The text that will actually be polished
+  const effectiveText = multiBullet && activeBulletIdx !== null
+    ? bullets[activeBulletIdx]
+    : selectedText;
 
   // ─── Write state ───────────────────────────
   const [writeStep, setWriteStep] = useState<WriteStep>("intro");
@@ -64,81 +78,179 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   useEffect(() => {
     setPolishMode(null);
     setRequirement("");
-    setPolishedText("");
     setPolishComplete(false);
+    setPolishResults([]);
+    setActiveBulletIdx(null);
   }, [selectedText]);
 
-  // Reset position on open
+  // Reset position & size on open
   useEffect(() => {
-    if (open) setPosition(null);
+    if (open) { setPosition(null); setPanelSize(null); }
   }, [open]);
 
-  // ─── Drag ──────────────────────────────────
+  // Reset panelSize on tab switch (auto-fit to content)
+  useEffect(() => { setPanelSize(null); }, [tab]);
+
+  // ─── Drag & Resize ──────────────────────────
+  const [panelSize, setPanelSize] = useState<{ w: number; h: number } | null>(null);
+  const resizing = useRef<{ dir: string; sx: number; sy: number; sw: number; sh: number; sl: number; st: number } | null>(null);
+
+  const MIN_W = 360;
+  const MIN_H = 280;
+
+  const currentW = panelSize?.w ?? PANEL_W;
+  const currentH = panelSize?.h;
+
   const onDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (!panelRef.current) return;
-    dragging.current = true;
+    e.preventDefault();
     const rect = panelRef.current.getBoundingClientRect();
+    dragging.current = true;
     dragStart.current = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
     panelRef.current.setPointerCapture(e.pointerId);
+
+    const onMove = (ev: PointerEvent) => {
+      if (!dragging.current) return;
+      const dx = ev.clientX - dragStart.current.x;
+      const dy = ev.clientY - dragStart.current.y;
+      let left = dragStart.current.left + dx;
+      let top = dragStart.current.top + dy;
+      left = Math.max(0, Math.min(left, window.innerWidth - (panelSize?.w ?? PANEL_W)));
+      top = Math.max(0, Math.min(top, window.innerHeight - MINIMIZED_SIZE));
+      setPosition({ left, top });
+    };
+
+    const cleanup = () => {
+      dragging.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      try { panelRef.current?.releasePointerCapture(e.pointerId); } catch {}
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+  }, [panelSize?.w]);
+
+  const onResizePointerDown = useCallback((dir: string) => (e: React.PointerEvent) => {
+    if (!panelRef.current) return;
     e.preventDefault();
+    e.stopPropagation();
+    const rect = panelRef.current.getBoundingClientRect();
+    resizing.current = { dir, sx: e.clientX, sy: e.clientY, sw: rect.width, sh: rect.height, sl: rect.left, st: rect.top };
+    panelRef.current.setPointerCapture(e.pointerId);
+
+    const onMove = (ev: PointerEvent) => {
+      const r = resizing.current;
+      if (!r) return;
+      const dx = ev.clientX - r.sx;
+      const dy = ev.clientY - r.sy;
+      let nw = r.sw;
+      let nh = r.sh;
+      let nl = r.sl;
+      let nt = r.st;
+
+      const maxW = Math.max(MIN_W, window.innerWidth / 2);
+      const maxH = Math.max(MIN_H, window.innerHeight / 2);
+
+      if (r.dir.includes("e")) nw = Math.min(maxW, Math.max(MIN_W, r.sw + dx));
+      if (r.dir.includes("w")) { nw = Math.min(maxW, Math.max(MIN_W, r.sw - dx)); nl = r.sl + (r.sw - nw); }
+      if (r.dir.includes("s")) nh = Math.min(maxH, Math.max(MIN_H, r.sh + dy));
+      if (r.dir.includes("n")) { nh = Math.min(maxH, Math.max(MIN_H, r.sh - dy)); nt = r.st + (r.sh - nh); }
+
+      nl = Math.max(0, Math.min(nl, window.innerWidth - MIN_W));
+      nt = Math.max(0, Math.min(nt, window.innerHeight - MINIMIZED_SIZE));
+
+      setPanelSize({ w: nw, h: nh });
+      setPosition({ left: nl, top: nt });
+    };
+
+    const cleanup = () => {
+      resizing.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      try { panelRef.current?.releasePointerCapture(e.pointerId); } catch {}
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
   }, []);
 
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging.current || !panelRef.current) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    let left = dragStart.current.left + dx;
-    let top = dragStart.current.top + dy;
-    left = Math.max(0, Math.min(left, window.innerWidth - PANEL_W));
-    top = Math.max(0, Math.min(top, window.innerHeight - MINIMIZED_SIZE));
-    setPosition({ left, top });
-  }, []);
-
-  const onPointerUp = useCallback(() => {
-    dragging.current = false;
-  }, []);
+  // Reset panelSize when selected text changes (auto-fit)
+  useEffect(() => {
+    if (selectedText) setPanelSize(null);
+  }, [selectedText]);
 
   // ─── Polish handlers ───────────────────────
-  const handlePolish = async (mode: "directed" | "auto") => {
+  const handleAutoPolish = async () => {
     if (!selectedText || !apiKey) return;
-    setPolishMode(mode);
-    if (mode === "auto") {
-      setPolishing(true);
-      const result = await polishText(apiKey, selectedText);
+    setPolishMode("auto");
+    setPolishing(true);
+
+    if (multiBullet && activeBulletIdx === null) {
+      // All bullets — use optimizeCard which returns AiBullet[]
+      const results = await optimizeCard(apiKey, selectedText);
+      setPolishing(false);
+      if (results) {
+        setPolishResults(results);
+        setPolishComplete(true);
+      }
+    } else {
+      // Single bullet — use optimizeSingleBullet
+      const result = await optimizeSingleBullet(apiKey, effectiveText);
       setPolishing(false);
       if (result) {
-        setPolishedText(result);
+        setPolishResults([result]);
         setPolishComplete(true);
       }
     }
   };
 
   const handleDirectedPolish = async () => {
-    if (!selectedText || !apiKey || !requirement.trim()) return;
+    if (!effectiveText || !apiKey || !requirement.trim()) return;
     setPolishing(true);
-    const result = await polishText(apiKey, selectedText, requirement.trim());
+    const result = await polishTextWithReason(apiKey, effectiveText, requirement.trim());
     setPolishing(false);
     if (result) {
-      setPolishedText(result);
+      setPolishResults([{ original: effectiveText, issues: "", quantify: "", rewritten: result.rewritten, reason: result.reason }]);
       setPolishComplete(true);
     }
   };
 
-  const handleAcceptPolish = () => {
-    if (polishedText) {
-      onAcceptPolish(polishedText);
-      setPolishComplete(false);
-      setPolishedText("");
-      setPolishMode(null);
-      setRequirement("");
+  const handleAcceptPolish = (idx: number) => {
+    const item = polishResults[idx];
+    if (item) {
+      onAcceptPolish(item.rewritten);
+      // Remove accepted result; if none left, reset
+      const next = polishResults.filter((_, i) => i !== idx);
+      if (next.length === 0) {
+        setPolishComplete(false);
+        setPolishResults([]);
+        setPolishMode(null);
+        setRequirement("");
+      } else {
+        setPolishResults(next);
+      }
     }
+  };
+
+  const handleAcceptAll = () => {
+    const allText = polishResults.map((r) => r.rewritten).join("\n");
+    onAcceptPolish(allText);
+    setPolishComplete(false);
+    setPolishResults([]);
+    setPolishMode(null);
+    setRequirement("");
   };
 
   const handleRepolish = () => {
     setPolishComplete(false);
-    setPolishedText("");
+    setPolishResults([]);
     if (polishMode === "auto") {
-      handlePolish("auto");
+      handleAutoPolish();
     } else {
       setPolishMode("directed");
     }
@@ -194,7 +306,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
 
   const style = position
     ? { left: position.left, top: position.top, transform: "none" }
-    : { left: `calc(50% - ${PANEL_W / 2}px)`, top: "50%", transform: "translateY(-50%)" };
+    : { left: `calc(50% - ${currentW / 2}px)`, top: "50%", transform: "translateY(-50%)" };
 
   return (
     <motion.div
@@ -205,30 +317,40 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       transition={{ duration: 0.2, ease: "easeOut" }}
       style={{
         ...style,
-        width: PANEL_W,
-        maxHeight: `min(90vh, 700px)`,
-        background: "rgba(255, 251, 247, 0.88)",
-        borderColor: "rgba(180, 160, 140, 0.25)",
-        boxShadow: "0 8px 40px rgba(80, 50, 20, 0.12), 0 2px 12px rgba(80, 50, 20, 0.06)",
+        width: currentW,
+        height: currentH || "auto",
+        maxHeight: panelSize ? undefined : `min(${Math.floor(window.innerHeight / 2)}px, 80vh)`,
+        // Apple frosted glass: 75% transparent (25% overlay) — the background page bleeds through
+        background: "linear-gradient(135deg, rgba(252,249,243,0.25) 0%, rgba(246,240,229,0.28) 100%)",
+        borderColor: "rgba(255,255,255,0.22)",
+        boxShadow:
+          // Outer ring — subtle white for glass edge
+          "0 0 0 0.5px rgba(255,252,248,0.6)," +
+          // Inner top highlight — light hitting the glass rim
+          "inset 0 1px 0 rgba(255,255,255,0.45)," +
+          // Close soft shadow for elevation
+          "0 2px 16px rgba(80,50,20,0.06)," +
+          // Deep diffuse shadow for floating depth
+          "0 16px 48px rgba(80,50,20,0.10)," +
+          // Far ambient shadow
+          "0 32px 64px rgba(80,50,20,0.04)",
+        borderRadius: 20,
       } as React.CSSProperties}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      className="fixed z-50 rounded-[16px] border flex flex-col overflow-hidden select-none backdrop-blur-2xl backdrop-saturate-150"
+      className="fixed z-50 flex flex-col overflow-hidden select-none backdrop-blur-3xl backdrop-saturate-200"
     >
-      {/* Drag handle — top edge bar */}
+      {/* Drag handle — top edge bar, nearly transparent */}
       <div
         onPointerDown={onDragPointerDown}
         className="h-3 shrink-0 cursor-grab active:cursor-grabbing flex items-center justify-center group"
-        style={{ background: "rgba(255, 250, 242, 0.4)" }}
+        style={{ background: "rgba(255,255,255,0.15)" }}
       >
-        <div className="w-8 h-0.5 rounded-full bg-claude-muted-soft/30 group-hover:bg-claude-muted-soft/60 transition-colors" />
+        <div className="w-8 h-0.5 rounded-full bg-claude-muted-soft/25 group-hover:bg-claude-muted-soft/50 transition-colors" />
       </div>
 
-      {/* Header — tab switcher */}
+      {/* Header — tab switcher, light translucent */}
       <div
         className="flex items-center border-b shrink-0"
-        style={{ borderColor: "rgba(180, 160, 140, 0.15)", background: "rgba(255, 250, 242, 0.6)" }}
+        style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,252,248,0.35)" }}
       >
         <button
           onClick={() => { setTab("polish"); setPolishMode(null); setPolishComplete(false); }}
@@ -251,8 +373,8 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
         </button>
       </div>
 
-      {/* Active tab indicator */}
-      <div className="flex shrink-0" style={{ background: "rgba(255, 250, 242, 0.3)" }}>
+      {/* Active tab indicator — translucent */}
+      <div className="flex shrink-0" style={{ background: "rgba(255,255,255,0.12)" }}>
         <div
           className="flex-1 h-0.5 transition-all duration-300 rounded-r"
           style={{ background: tab === "polish" ? "var(--color-claude-primary)" : "transparent" }}
@@ -264,37 +386,88 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       </div>
 
       {/* Body */}
-      <div className="overflow-y-auto flex-1 select-text">
+      <div className="overflow-y-auto min-h-0 select-text" style={{ flex: "0 1 auto" }}>
         {tab === "polish" ? (
           <div className="p-4 space-y-3">
             {/* Selected card indicator */}
             {selectedText ? (
-              <div className="rounded-[10px] p-3.5 border" style={{ background: "rgba(255, 250, 242, 0.5)", borderColor: "rgba(180, 160, 140, 0.2)" }}>
-                <p className="text-[10px] text-claude-muted-soft mb-0.5 uppercase tracking-wider">已选择</p>
-                <p className="text-[12px] font-medium text-claude-ink mb-1.5">{selectedLabel}</p>
-                <p className="text-[12px] text-claude-body leading-relaxed line-clamp-4 whitespace-pre-wrap">{selectedText}</p>
-              </div>
+              <>
+                <div className="rounded-[10px] p-3.5 border" style={{ background: "rgba(255,255,255,0.45)", borderColor: "rgba(255,255,255,0.3)" }}>
+                  <p className="text-[10px] text-claude-muted-soft mb-0.5 uppercase tracking-wider">已选择</p>
+                  <p className="text-[12px] font-medium text-claude-ink mb-1.5">{selectedLabel}</p>
+                  {!multiBullet && (
+                    <p className="text-[12px] text-claude-body leading-relaxed whitespace-pre-wrap">{selectedText}</p>
+                  )}
+                </div>
+
+                {/* Bullet list selector — when card has multiple bullets */}
+                {multiBullet && !polishComplete && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-claude-muted-soft uppercase tracking-wider px-1 mb-1">
+                      选择优化范围（共 {bullets.length} 条）
+                    </p>
+                    {/* Select all */}
+                    <button
+                      onClick={() => setActiveBulletIdx(null)}
+                      className={`w-full text-left px-3 py-2 rounded-[7px] text-[12px] transition-all border flex items-center gap-2 ${
+                        activeBulletIdx === null
+                          ? "bg-claude-primary/15 border-claude-primary/40 text-claude-ink font-medium"
+                          : "bg-white/20 border-white/15 text-claude-body hover:bg-white/30"
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                        activeBulletIdx === null ? "border-claude-primary" : "border-claude-muted-soft/50"
+                      }`}>
+                        {activeBulletIdx === null && <span className="w-1.5 h-1.5 rounded-full bg-claude-primary" />}
+                      </span>
+                      全选（{bullets.length} 条一起润色）
+                    </button>
+                    {/* Individual bullets */}
+                    {bullets.map((b, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveBulletIdx(i)}
+                        className={`w-full text-left px-3 py-2 rounded-[7px] text-[12px] transition-all border flex items-center gap-2 ${
+                          activeBulletIdx === i
+                            ? "bg-claude-primary/15 border-claude-primary/40 text-claude-ink font-medium"
+                            : "bg-white/20 border-white/15 text-claude-body hover:bg-white/30"
+                        }`}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                          activeBulletIdx === i ? "border-claude-primary" : "border-claude-muted-soft/50"
+                        }`}>
+                          {activeBulletIdx === i && <span className="w-1.5 h-1.5 rounded-full bg-claude-primary" />}
+                        </span>
+                        <span className="truncate">{b}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="rounded-[10px] p-5 border border-dashed text-center" style={{ background: "rgba(255, 250, 242, 0.3)", borderColor: "rgba(180, 160, 140, 0.2)" }}>
+              <div className="rounded-[10px] p-5 border border-dashed text-center" style={{ background: "rgba(255,255,255,0.25)", borderColor: "rgba(255,255,255,0.25)" }}>
                 <p className="text-[12px] text-claude-muted">点击页面上的自我评价或经历卡片，自动捕获文本</p>
               </div>
             )}
 
             {/* Polish actions */}
-            {!polishComplete && (
+            {!polishComplete && selectedText && (
               <div className="space-y-2">
                 {polishMode === "directed" ? (
                   <div className="space-y-2">
+                    {multiBullet && activeBulletIdx !== null && (
+                      <p className="text-[11px] text-claude-muted px-1">只润色第 {activeBulletIdx + 1} 条 bullet</p>
+                    )}
                     <textarea
                       value={requirement}
                       onChange={(e) => setRequirement(e.target.value)}
                       placeholder="输入润色要求，如：用词更专业、突出量化成果、缩短到50字以内…"
-                      className="w-full h-[72px] px-3 py-2 bg-claude-canvas rounded-[8px] text-[12px] text-claude-ink placeholder-claude-muted-soft resize-none border border-claude-hairline focus:border-claude-primary focus:outline-none"
+                      className="w-full h-[72px] px-3 py-2 bg-white/30 rounded-[8px] text-[12px] text-claude-ink placeholder-claude-muted-soft resize-none border border-white/20 focus:border-claude-primary focus:outline-none backdrop-blur-sm"
                       autoFocus
                     />
                     <button
                       onClick={handleDirectedPolish}
-                      disabled={polishing || !requirement.trim() || !selectedText}
+                      disabled={polishing || !requirement.trim()}
                       className="w-full py-2.5 bg-claude-primary disabled:bg-claude-hairline disabled:text-claude-muted-soft text-claude-on-primary text-[13px] font-medium rounded-[8px] flex items-center justify-center gap-1.5 hover:bg-claude-primary-active transition-colors"
                     >
                       {polishing ? <><Loader2 size={13} className="animate-spin" />润色中…</> : <><Sparkles size={13} />开始润色</>}
@@ -305,62 +478,93 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
                   <div className="flex gap-2">
                     <button
                       onClick={() => setPolishMode("directed")}
-                      disabled={!selectedText}
-                      className="flex-1 py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-claude-surface transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
-                      style={{ borderColor: "rgba(180, 160, 140, 0.2)", background: "rgba(255, 250, 242, 0.4)" }}
+                      className="flex-1 py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-white/30 transition-colors flex items-center justify-center gap-1.5"
+                      style={{ borderColor: "rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.35)" }}
                     >
                       <PenLine size={13} />自定义要求润色
                     </button>
                     <button
-                      onClick={() => handlePolish("auto")}
-                      disabled={!selectedText || polishing}
+                      onClick={handleAutoPolish}
+                      disabled={polishing}
                       className="flex-1 py-2.5 bg-claude-primary disabled:bg-claude-hairline disabled:text-claude-muted-soft text-claude-on-primary text-[12px] font-medium rounded-[8px] hover:bg-claude-primary-active transition-colors flex items-center justify-center gap-1.5"
                     >
-                      {polishing ? <><Loader2 size={13} className="animate-spin" />润色中…</> : <><Sparkles size={13} />一键自动润色</>}
+                      {polishing ? <><Loader2 size={13} className="animate-spin" />润色中…</> : <><Sparkles size={13} />自动润色</>}
                     </button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Polish result — comparison */}
-            {polishComplete && polishedText && (
-              <div className="space-y-2.5">
-                {/* Optimized version */}
-                <div className="rounded-[10px] p-3.5 border" style={{ background: "rgba(255, 250, 242, 0.5)", borderColor: "rgba(180, 160, 140, 0.2)" }}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Sparkles size={12} className="text-claude-primary" />
-                    <p className="text-[11px] font-medium text-claude-ink">优化版</p>
+            {/* Polish results — comparison cards */}
+            {polishComplete && polishResults.length > 0 && (
+              <div className="space-y-3">
+                {polishResults.length > 1 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-claude-muted">
+                      {polishResults.length} 条优化结果
+                    </p>
+                    <button
+                      onClick={handleAcceptAll}
+                      className="px-3 py-1.5 bg-claude-primary text-claude-on-primary text-[11px] font-medium rounded-[6px] flex items-center gap-1 hover:bg-claude-primary-active transition-colors"
+                    >
+                      <Check size={11} />全部采纳
+                    </button>
                   </div>
-                  <p className="text-[12px] text-claude-ink leading-relaxed whitespace-pre-wrap">{polishedText}</p>
-                </div>
-
-                {/* Original version */}
-                <details className="group">
-                  <summary className="text-[11px] text-claude-muted cursor-pointer hover:text-claude-ink transition-colors list-none flex items-center gap-1">
-                    <ChevronRight size={11} className="group-open:rotate-90 transition-transform" />查看原文
-                  </summary>
-                  <div className="mt-2 bg-claude-canvas rounded-[8px] p-3 border border-claude-hairline">
-                    <p className="text-[12px] text-claude-body leading-relaxed whitespace-pre-wrap">{selectedText}</p>
-                  </div>
-                </details>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleAcceptPolish}
-                    className="flex-1 py-2.5 bg-claude-primary text-claude-on-primary text-[12px] font-medium rounded-[8px] flex items-center justify-center gap-1.5 hover:bg-claude-primary-active transition-colors"
+                )}
+                {polishResults.map((item, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.06 }}
+                    className="rounded-[10px] border overflow-hidden"
+                    style={{ background: "rgba(255,255,255,0.45)", borderColor: "rgba(255,255,255,0.3)" }}
                   >
-                    <Check size={13} />采纳优化版
-                  </button>
-                  <button
-                    onClick={handleRepolish}
-                    className="px-3 py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-claude-surface transition-colors flex items-center gap-1.5"
-                    style={{ borderColor: "rgba(180, 160, 140, 0.2)", background: "rgba(255, 250, 242, 0.4)" }}
-                  >
-                    <RotateCcw size={13} />重新润色
-                  </button>
-                </div>
+                    {/* Side-by-side comparison */}
+                    <div className="grid grid-cols-2 divide-x" style={{ borderColor: "rgba(255,255,255,0.25)" }}>
+                      <div className="p-3">
+                        <p className="text-[10px] text-claude-muted-soft mb-1.5 uppercase tracking-wider">原文</p>
+                        <p className="text-[12px] text-claude-body leading-relaxed whitespace-pre-wrap">{item.original}</p>
+                      </div>
+                      <div className="p-3">
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <Sparkles size={10} className="text-claude-primary" />
+                          <p className="text-[10px] text-claude-primary font-medium uppercase tracking-wider">优化版</p>
+                        </div>
+                        <p className="text-[12px] text-claude-ink leading-relaxed whitespace-pre-wrap">{item.rewritten}</p>
+                      </div>
+                    </div>
+
+                    {/* Reason */}
+                    {item.reason && (
+                      <div className="px-3 pb-3 pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.15)" }}>
+                        <p className="text-[11px] text-claude-muted leading-relaxed">
+                          <span className="text-claude-muted-soft mr-1">为什么这样改：</span>
+                          {item.reason}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Per-item actions */}
+                    <div className="flex gap-2 px-3 pb-3">
+                      <button
+                        onClick={() => handleAcceptPolish(i)}
+                        className="flex-1 py-2 bg-claude-primary text-claude-on-primary text-[11px] font-medium rounded-[7px] flex items-center justify-center gap-1 hover:bg-claude-primary-active transition-colors"
+                      >
+                        <Check size={12} />采纳这条
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+
+                {/* Re-polish */}
+                <button
+                  onClick={handleRepolish}
+                  className="w-full py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-white/30 transition-colors flex items-center justify-center gap-1.5"
+                  style={{ borderColor: "rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.35)" }}
+                >
+                  <RotateCcw size={13} />重新润色
+                </button>
               </div>
             )}
           </div>
@@ -424,7 +628,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
                         value={currentAnswer}
                         onChange={(e) => setAnswers({ ...answers, [QUESTIONS[currentQuestion].key]: e.target.value })}
                         placeholder={QUESTIONS[currentQuestion].placeholder}
-                        className="w-full h-[88px] px-3 py-2 bg-claude-canvas rounded-[8px] text-[12px] text-claude-ink placeholder-claude-muted-soft resize-none border border-claude-hairline focus:border-claude-primary focus:outline-none"
+                        className="w-full h-[88px] px-3 py-2 bg-white/30 rounded-[8px] text-[12px] text-claude-ink placeholder-claude-muted-soft resize-none border border-white/20 focus:border-claude-primary focus:outline-none backdrop-blur-sm"
                         autoFocus
                       />
                     </motion.div>
@@ -458,7 +662,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
                             currentQuestion === QUESTIONS.findIndex((x) => x.key === q.key)
                               ? "bg-claude-surface-card border-claude-primary" : val ? "bg-claude-canvas border-claude-hairline text-claude-body" : "border-transparent text-claude-muted-soft"
                           }`}
-                          style={currentQuestion !== QUESTIONS.findIndex((x) => x.key === q.key) && !val ? { background: "rgba(255, 250, 242, 0.2)" } : {}}>
+                          style={currentQuestion !== QUESTIONS.findIndex((x) => x.key === q.key) && !val ? { background: "rgba(255,255,255,0.15)" } : {}}>
                           <div className="flex items-center gap-1 mb-0.5">
                             <span className="text-claude-muted">{q.label}</span>
                             {val && <span className="text-claude-muted-soft ml-auto">✓</span>}
@@ -473,19 +677,19 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
 
               {writeStep === "done" && (
                 <motion.div key="done" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
-                  <div className="rounded-[10px] p-3.5 border" style={{ background: "rgba(255, 250, 242, 0.5)", borderColor: "rgba(180, 160, 140, 0.2)" }}>
+                  <div className="rounded-[10px] p-3.5 border" style={{ background: "rgba(255,255,255,0.5)", borderColor: "rgba(255,255,255,0.3)" }}>
                     <div className="flex items-center gap-1.5 mb-2.5">
                       <Sparkles size={12} className="text-claude-primary" />
                       <p className="text-[13px] text-claude-ink" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 500 }}>生成结果</p>
                     </div>
-                    <div className="p-3.5 bg-claude-canvas rounded-[8px] border border-claude-hairline mb-3">
+                    <div className="p-3.5 bg-white/60 rounded-[8px] border border-white/30 mb-3">
                       <p className="text-[13px] text-claude-ink leading-relaxed">{generatedBullet}</p>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={handleCopy} className="flex-1 py-2.5 bg-claude-primary text-claude-on-primary text-[12px] font-medium rounded-[8px] flex items-center justify-center gap-1.5 hover:bg-claude-primary-active transition-colors">
                         {copied ? <><Check size={13} />已复制</> : <><Copy size={13} />复制到剪贴板</>}
                       </button>
-                      <button onClick={() => { setGeneratedBullet(""); handleGenerate(); }} className="px-3 py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-claude-surface transition-colors flex items-center gap-1.5" style={{ borderColor: "rgba(180, 160, 140, 0.2)", background: "rgba(255, 250, 242, 0.4)" }}>
+                      <button onClick={() => { setGeneratedBullet(""); handleGenerate(); }} className="px-3 py-2.5 border text-claude-body text-[12px] font-medium rounded-[8px] hover:bg-white/30 transition-colors flex items-center gap-1.5" style={{ borderColor: "rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.35)" }}>
                         <RotateCcw size={13} />重新生成
                       </button>
                     </div>
@@ -499,6 +703,24 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
           </div>
         )}
       </div>
+
+      {/* Resize handles — 4 edges + 4 corners */}
+      {/* Top edge */}
+      <div onPointerDown={onResizePointerDown("n")} className="absolute top-0 left-3 right-3 h-1 cursor-ns-resize z-10" />
+      {/* Bottom edge */}
+      <div onPointerDown={onResizePointerDown("s")} className="absolute bottom-0 left-3 right-3 h-1 cursor-ns-resize z-10" />
+      {/* Left edge */}
+      <div onPointerDown={onResizePointerDown("w")} className="absolute left-0 top-3 bottom-3 w-1 cursor-ew-resize z-10" />
+      {/* Right edge */}
+      <div onPointerDown={onResizePointerDown("e")} className="absolute right-0 top-3 bottom-3 w-1 cursor-ew-resize z-10" />
+      {/* Top-left corner */}
+      <div onPointerDown={onResizePointerDown("nw")} className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize z-10" />
+      {/* Top-right corner */}
+      <div onPointerDown={onResizePointerDown("ne")} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-10" />
+      {/* Bottom-left corner */}
+      <div onPointerDown={onResizePointerDown("sw")} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-10" />
+      {/* Bottom-right corner */}
+      <div onPointerDown={onResizePointerDown("se")} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-10" />
     </motion.div>
   );
 }

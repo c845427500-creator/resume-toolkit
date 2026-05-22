@@ -360,17 +360,29 @@ function ResumeCard({
             return (
               <div key={idx} className="space-y-1">
                 <MarkdownToolbar editorRef={refObj} />
-                <RichTextarea
-                  editorRef={refObj}
-                  value={b.text}
-                  onChange={(md) => {
-                    const updated = [...item.bullets];
-                    updated[idx] = { ...updated[idx], text: md };
-                    onUpdate({ bullets: updated });
-                  }}
-                  className="w-full text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
-                  placeholder="输入要点…"
-                />
+                <div className="flex items-start gap-1.5">
+                  <RichTextarea
+                    editorRef={refObj}
+                    value={b.text}
+                    onChange={(md) => {
+                      const updated = [...item.bullets];
+                      updated[idx] = { ...updated[idx], text: md };
+                      onUpdate({ bullets: updated });
+                    }}
+                    className="flex-1 text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
+                    placeholder="输入要点…"
+                  />
+                  <button
+                    onClick={() => {
+                      const updated = item.bullets.filter((_, i) => i !== idx);
+                      onUpdate({ bullets: updated });
+                    }}
+                    className="w-6 h-6 flex items-center justify-center rounded-[4px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors shrink-0 mt-0.5"
+                    title="删除此要点"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               </div>
             );
           })
@@ -390,9 +402,19 @@ function ResumeCard({
         )}
       </div>
 
-      {/* Bullet count */}
+      {/* Bullet count + add button — edit mode only */}
       {isEditing && (
-        <div className="text-[12px] text-claude-muted-soft pt-1">{item.bullets.length} 条要点</div>
+        <div className="flex items-center justify-between pt-1">
+          <button
+            onClick={() => onUpdate({ bullets: [...item.bullets, { text: "", tags: [] }] })}
+            className="flex items-center gap-1 text-[12px] text-claude-muted hover:text-claude-primary transition-colors"
+            title="添加要点"
+          >
+            <Plus size={13} />
+            <span>添加要点</span>
+          </button>
+          <span className="text-[12px] text-claude-muted-soft">{item.bullets.length} 条要点</span>
+        </div>
       )}
     </div>
   );
@@ -1785,13 +1807,18 @@ export default function LibraryPage() {
         </button>
       )}
 
-      {/* Floating AI button */}
+      {/* Floating AI button — glassmorphism */}
       <button
         onClick={() => { setAiModalOpen(true); setSelectedCardText(""); setSelectedCardLabel(""); setSelectedCardSource(null); }}
-        className="fixed bottom-28 right-6 z-40 w-12 h-12 rounded-full bg-claude-primary text-claude-on-primary shadow-lg flex items-center justify-center hover:bg-claude-primary-active transition-all hover:scale-105 active:scale-95"
+        className="fixed bottom-28 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 backdrop-blur-xl"
+        style={{
+          background: "rgba(184,117,74,0.72)",
+          border: "1px solid rgba(255,255,255,0.22)",
+          boxShadow: "0 0 0 0.5px rgba(255,252,248,0.25), inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 20px rgba(80,50,20,0.12), 0 8px 32px rgba(80,50,20,0.06)",
+        }}
         title="AI 助手"
       >
-        <Sparkles size={20} />
+        <Sparkles size={20} className="text-white/95" />
       </button>
 
       {/* Bottom Nav */}

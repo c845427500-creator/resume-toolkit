@@ -1,4 +1,4 @@
-import { buildOptimizePrompt, buildStarExperiencePrompt, buildCardOptimizePrompt, buildSelfEvalPrompt, buildAutoPolishPrompt, buildDirectedPolishPrompt } from "./prompts";
+import { buildOptimizePrompt, buildStarExperiencePrompt, buildCardOptimizePrompt, buildSelfEvalPrompt, buildAutoPolishPrompt, buildDirectedPolishPrompt, buildDirectedPolishReasonPrompt } from "./prompts";
 
 async function fetchDeepSeek(
   apiKey: string,
@@ -104,6 +104,11 @@ export interface AiSelfEval {
   reason: string;
 }
 
+export interface PolishReasonResult {
+  rewritten: string;
+  reason: string;
+}
+
 export async function polishText(
   apiKey: string,
   text: string,
@@ -113,6 +118,26 @@ export async function polishText(
     ? buildDirectedPolishPrompt(text, requirement)
     : buildAutoPolishPrompt(text);
   return fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 4000);
+}
+
+export async function polishTextWithReason(
+  apiKey: string,
+  text: string,
+  requirement: string
+): Promise<PolishReasonResult | null> {
+  const { systemPrompt, userPrompt } = buildDirectedPolishReasonPrompt(text, requirement);
+  const result = await fetchDeepSeek(apiKey, systemPrompt, userPrompt, 0.3, 4000);
+  if (!result) return null;
+
+  try {
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : result.trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed && typeof parsed.rewritten === "string") return parsed as PolishReasonResult;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function optimizeSelfEval(
