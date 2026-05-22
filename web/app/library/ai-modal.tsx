@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Loader2, X, Check, Copy, RotateCcw, ChevronRight, ChevronLeft, PenLine, Wand2, GripHorizontal } from "lucide-react";
+import { Sparkles, Loader2, X, Check, Copy, RotateCcw, ChevronRight, ChevronLeft, PenLine, Wand2 } from "lucide-react";
 import { polishText, generateExperience } from "@/lib/deepseek-client";
 
 type AiTab = "polish" | "write";
@@ -74,10 +74,8 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   }, [open]);
 
   // ─── Drag ──────────────────────────────────
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
+  const onDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (!panelRef.current) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("input") || target.closest("textarea") || target.closest("select") || target.closest("summary") || target.closest("details")) return;
     dragging.current = true;
     const rect = panelRef.current.getBoundingClientRect();
     dragStart.current = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
@@ -210,25 +208,28 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
         width: PANEL_W,
         maxHeight: `min(90vh, 700px)`,
         background: "rgba(255, 251, 247, 0.88)",
-        backdropFilter: "blur(24px) saturate(180%)",
-        WebkitBackdropFilter: "blur(24px) saturate(180%)",
         borderColor: "rgba(180, 160, 140, 0.25)",
-        boxShadow: "0 8px 40px rgba(80, 50, 20, 0.12), 0 2px 12px rgba(80, 50, 20, 0.06), 0 0 0 1px rgba(180, 160, 140, 0.08) inset",
+        boxShadow: "0 8px 40px rgba(80, 50, 20, 0.12), 0 2px 12px rgba(80, 50, 20, 0.06)",
       } as React.CSSProperties}
-      onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      className="fixed z-50 rounded-[16px] border flex flex-col overflow-hidden select-none"
+      className="fixed z-50 rounded-[16px] border flex flex-col overflow-hidden select-none backdrop-blur-2xl backdrop-saturate-150"
     >
-      {/* Header — drag handle */}
+      {/* Drag handle — top edge bar */}
       <div
-        className="flex items-center border-b shrink-0 cursor-grab active:cursor-grabbing"
+        onPointerDown={onDragPointerDown}
+        className="h-3 shrink-0 cursor-grab active:cursor-grabbing flex items-center justify-center group"
+        style={{ background: "rgba(255, 250, 242, 0.4)" }}
+      >
+        <div className="w-8 h-0.5 rounded-full bg-claude-muted-soft/30 group-hover:bg-claude-muted-soft/60 transition-colors" />
+      </div>
+
+      {/* Header — tab switcher */}
+      <div
+        className="flex items-center border-b shrink-0"
         style={{ borderColor: "rgba(180, 160, 140, 0.15)", background: "rgba(255, 250, 242, 0.6)" }}
       >
-        <div className="flex items-center justify-center w-8 h-9 text-claude-muted-soft/60">
-          <GripHorizontal size={14} />
-        </div>
         <button
           onClick={() => { setTab("polish"); setPolishMode(null); setPolishComplete(false); }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-medium transition-colors ${
