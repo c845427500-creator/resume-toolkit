@@ -2,17 +2,16 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, Sparkles, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp } from "lucide-react";
+import { Copy, Check, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp } from "lucide-react";
 import Link from "next/link";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { optimizeCard, optimizeSingleBullet, optimizeSelfEval, type AiBullet, type AiSelfEval } from "@/lib/deepseek-client";
 import { matchCardsByDirection } from "@/lib/resume-parser";
 import {
   initStore, saveStore, getLibrary,
   updatePersonal, updateEducation, updateFamily, updateCustomFields,
-  updateCard, setAiVersion, deleteCard, updateSkills, updateSelfEval,
+  updateCard, deleteCard, updateSkills, updateSelfEval,
   reorderCards, resetLibrary, exportLibrary,
   addCustomDirection, removeCustomDirection, setDirectionLibrary,
   importParsedResume,
@@ -271,26 +270,17 @@ function SortableCard({ id, children }: { id: string; children: React.ReactNode 
 
 // ─── ResumeCard ───────────────────────────────────
 function ResumeCard({
-  item, section, apiKey, onUpdate, onAiOptimize, onReoptimizeBullet, onDelete, forceEdit, saveAllKey,
+  item, onUpdate, onDelete, forceEdit, saveAllKey,
 }: {
-  item: CardItem; section: CardSection; apiKey: string;
-  onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets" | "aiBullets">>) => void;
-  onAiOptimize: () => Promise<void>;
-  onReoptimizeBullet: (bulletIdx: number) => Promise<void>;
+  item: CardItem;
+  onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets">>) => void;
   onDelete: () => void;
   forceEdit?: boolean;
   saveAllKey?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const isEditing = editing || forceEdit;
-  const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
-  const [optimizing, setOptimizing] = useState(false);
-  const [reoptimizingIdx, setReoptimizingIdx] = useState<number | null>(null);
-  const [allAccepted, setAllAccepted] = useState(false);
-  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const snapshotRef = useRef<{ text: string; tags: string[] }[] | null>(null);
-  const hasAi = !!(item.aiBullets && item.aiBullets.length > 0);
-  const hasUnacceptedAi = hasAi && !allAccepted;
   const bulletRefObjs = useRef<{ current: HTMLDivElement | null }[]>([]);
   if (bulletRefObjs.current.length < item.bullets.length) {
     for (let i = bulletRefObjs.current.length; i < item.bullets.length; i++) {
@@ -298,192 +288,20 @@ function ResumeCard({
     }
   }
 
-  useEffect(() => {
-    if (saveAllKey != null && saveAllKey > 0) {
-      // Auto-save AI version if unaccepted AI exists
-      if (hasUnacceptedAi && item.aiBullets) {
-        const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
-        onUpdate({ bullets: updated, aiBullets: undefined });
-        setAllAccepted(false);
-        setAiViewMode("original");
-      }
-      setShowSaveConfirm(false);
-      snapshotRef.current = null;
-      setEditing(false);
-    }
-  }, [saveAllKey]);
+  useEffect(() => { if (saveAllKey != null && saveAllKey > 0) { snapshotRef.current = null; setEditing(false); } }, [saveAllKey]);
 
-  // Capture snapshot when entering edit mode
   useEffect(() => {
-    if (isEditing && !snapshotRef.current) {
-      snapshotRef.current = item.bullets.map((b) => ({ ...b }));
-    }
-    if (!isEditing) {
-      snapshotRef.current = null;
-    }
+    if (isEditing && !snapshotRef.current) snapshotRef.current = item.bullets.map((b) => ({ ...b }));
+    if (!isEditing) snapshotRef.current = null;
   }, [isEditing]);
 
-  const handleOptimize = async () => { setAllAccepted(false); setOptimizing(true); await onAiOptimize(); setOptimizing(false); setAiViewMode("compare"); };
-
-  const handleAcceptOne = (i: number) => {
-    if (!item.aiBullets?.[i]) return;
-    const updated = [...item.bullets];
-    updated[i] = { text: item.aiBullets[i].rewritten, tags: [] };
-    onUpdate({ bullets: updated });
-  };
-
-  const handleAcceptAll = () => {
-    if (!item.aiBullets) return;
-    const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
-    onUpdate({ bullets: updated });
-    setAllAccepted(true);
-    setAiViewMode("original");
-  };
-
-  const handleUndoAll = () => {
-    if (!item.aiBullets) return;
-    const original = item.aiBullets.map((ab) => ({ text: ab.original, tags: [] as string[] }));
-    onUpdate({ bullets: original, aiBullets: undefined });
-    setAllAccepted(false);
-    setAiViewMode("original");
-  };
-
-  const handleDismissAi = () => {
-    onUpdate({ aiBullets: undefined });
-    setAllAccepted(false);
-    setAiViewMode("original");
-    setShowSaveConfirm(false);
-  };
-
   const handleCancel = () => {
-    // Cancel edit: restore snapshot and clear any AI results
-    if (snapshotRef.current) {
-      onUpdate({ bullets: snapshotRef.current, aiBullets: undefined });
-    }
-    setAllAccepted(false);
-    setAiViewMode("original");
-    setShowSaveConfirm(false);
+    if (snapshotRef.current) onUpdate({ bullets: snapshotRef.current });
     snapshotRef.current = null;
     setEditing(false);
   };
 
-  const handleSave = () => {
-    // If there are unaccepted AI results, require user to choose a version
-    if (hasUnacceptedAi) {
-      setShowSaveConfirm(true);
-      return;
-    }
-    // No AI or already accepted — just exit edit mode
-    setShowSaveConfirm(false);
-    snapshotRef.current = null;
-    setEditing(false);
-  };
-
-  const handleSaveAi = () => {
-    // Apply AI version to all bullets, clear aiBullets, exit edit mode
-    if (!item.aiBullets) return;
-    const updated = item.aiBullets.map((ab) => ({ text: ab.rewritten, tags: [] as string[] }));
-    onUpdate({ bullets: updated, aiBullets: undefined });
-    setAllAccepted(false);
-    setAiViewMode("original");
-    setShowSaveConfirm(false);
-    snapshotRef.current = null;
-    setEditing(false);
-  };
-
-  const handleSaveOriginal = () => {
-    // Discard AI results, keep current (possibly edited) bullets, exit edit mode
-    onUpdate({ aiBullets: undefined });
-    setAllAccepted(false);
-    setAiViewMode("original");
-    setShowSaveConfirm(false);
-    snapshotRef.current = null;
-    setEditing(false);
-  };
-
-  // Shared AI comparison panel
-  const aiComparisonPanel = item.aiBullets && aiViewMode !== "original" && (
-    <div className="space-y-3 pt-1">
-      {aiViewMode === "compare" ? (
-        item.aiBullets.map((ab, i) => (
-          <div key={i} className="space-y-1.5 bg-claude-canvas rounded-[8px] p-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-orange-50/50 rounded-[6px] px-3 py-2 border border-orange-100">
-                <div className="text-[10px] font-medium text-orange-600 mb-1">原文</div>
-                <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.original)}</div>
-              </div>
-              <div className="bg-emerald-50/50 rounded-[6px] px-3 py-2 border border-emerald-100">
-                <div className="text-[10px] font-medium text-emerald-600 mb-1">AI 润色</div>
-                <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.rewritten)}</div>
-              </div>
-            </div>
-            {ab.issues && (
-              <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-                <span className="font-medium text-claude-muted">弱点：</span>{ab.issues}
-              </div>
-            )}
-            {ab.quantify && (
-              <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-                <span className="font-medium text-claude-muted">量化机会：</span>{ab.quantify}
-              </div>
-            )}
-            <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-              <span className="font-medium text-claude-muted">改写说明：</span>{ab.reason}
-            </div>
-            {item.bullets.length > 1 && (
-              <div className="flex items-center gap-1.5">
-                {!allAccepted && (
-                  <button
-                    onClick={() => handleAcceptOne(i)}
-                    className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                  >
-                    接受此条
-                  </button>
-                )}
-                <button
-                  onClick={async () => { setReoptimizingIdx(i); await onReoptimizeBullet(i); setReoptimizingIdx(null); }}
-                  disabled={reoptimizingIdx !== null}
-                  className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink disabled:opacity-50 transition-colors"
-                >
-                  {reoptimizingIdx === i ? "优化中…" : "重新优化此条"}
-                </button>
-              </div>
-            )}
-          </div>
-        ))
-      ) : (
-        item.aiBullets.map((ab, i) => (
-          <div key={i} className="space-y-1 bg-claude-canvas rounded-[8px] p-3">
-            <div className="text-[13px] leading-relaxed text-claude-body">{renderMarkdown(ab.rewritten)}</div>
-            <div className="text-[11px] text-claude-muted-soft mt-1 pt-1 border-t border-claude-hairline-soft">{ab.reason}</div>
-          </div>
-        ))
-      )}
-    </div>
-  );
-
-  // Shared AI control bar
-  const aiControlBar = hasAi && (
-    <div className="flex items-center justify-between pt-2 border-t border-claude-hairline-soft">
-      <span className="text-[12px] text-claude-muted-soft">
-        {allAccepted ? `已接受全部 (${item.aiBullets!.length} 条)` : `AI 润色完成 (${item.aiBullets!.length} 条建议)`}
-      </span>
-      <div className="flex items-center gap-1">
-        {allAccepted ? (
-          <button onClick={handleUndoAll} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink transition-colors">撤销全部</button>
-        ) : (
-          <>
-            <button onClick={() => setAiViewMode("original")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "original" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>原文</button>
-            <button onClick={() => setAiViewMode("ai")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "ai" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>AI 版</button>
-            <button onClick={() => setAiViewMode("compare")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "compare" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>对照</button>
-            <span className="text-claude-hairline mx-1">|</span>
-            <button onClick={handleAcceptAll} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">全部接受</button>
-            <button onClick={handleDismissAi} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-red-500 transition-colors">放弃</button>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  const handleSave = () => { snapshotRef.current = null; setEditing(false); };
 
   return (
     <div className="bg-claude-surface-card rounded-[10px] border border-claude-hairline p-4 pl-7 space-y-3">
@@ -507,20 +325,9 @@ function ResumeCard({
             </>
           )}
         </div>
-        {/* Top-right action buttons */}
         <div className="flex items-center gap-0.5 shrink-0">
           {isEditing ? (
             <>
-              {showSaveConfirm && (
-                <div className="absolute right-2 top-12 z-10 bg-claude-surface-card rounded-[10px] border border-claude-hairline p-3 shadow-lg space-y-2 min-w-[200px]">
-                  <p className="text-[12px] text-claude-muted text-center">AI 优化尚未接受，保存哪个版本？</p>
-                  <div className="flex flex-col gap-1.5">
-                    <button onClick={handleSaveAi} className="text-[12px] font-medium px-3 py-1.5 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">保存 AI 优化版</button>
-                    <button onClick={handleSaveOriginal} className="text-[12px] font-medium px-3 py-1.5 rounded-[6px] bg-claude-surface text-claude-muted hover:text-claude-ink transition-colors">保存原文</button>
-                    <button onClick={() => setShowSaveConfirm(false)} className="text-[11px] text-claude-muted-soft hover:text-claude-ink transition-colors pt-0.5">取消</button>
-                  </div>
-                </div>
-              )}
               {!forceEdit && (
                 <button onClick={handleCancel} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="取消">
                   <X size={14} />
@@ -531,13 +338,11 @@ function ResumeCard({
               </button>
             </>
           ) : (
-            <>
-              {!forceEdit && (
-                <button onClick={() => setEditing(true)} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="编辑">
-                  <Edit3 size={14} />
-                </button>
-              )}
-            </>
+            !forceEdit && (
+              <button onClick={() => setEditing(true)} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-claude-surface text-claude-muted-soft hover:text-claude-ink transition-colors" title="编辑">
+                <Edit3 size={14} />
+              </button>
+            )
           )}
           <button onClick={onDelete} className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors ml-0.5" title="删除">
             <Trash2 size={14} />
@@ -548,55 +353,37 @@ function ResumeCard({
       {/* Bullets */}
       <div className="space-y-1.5">
         {isEditing ? (
-          <>
-            {item.bullets.map((b, idx) => {
-              const refObj = bulletRefObjs.current[idx];
-              return (
-                <div key={idx} className="space-y-1">
-                  <MarkdownToolbar editorRef={refObj} />
-                  <RichTextarea
-                    editorRef={refObj}
-                    value={b.text}
-                    onChange={(md) => {
-                      const updated = [...item.bullets];
-                      updated[idx] = { ...updated[idx], text: md };
-                      onUpdate({ bullets: updated });
-                    }}
-                    className="w-full text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
-                    placeholder="输入要点…"
-                  />
-                </div>
-              );
-            })}
-            {/* AI comparison shown during editing */}
-            {aiComparisonPanel}
-          </>
+          item.bullets.map((b, idx) => {
+            const refObj = bulletRefObjs.current[idx];
+            return (
+              <div key={idx} className="space-y-1">
+                <MarkdownToolbar editorRef={refObj} />
+                <RichTextarea
+                  editorRef={refObj}
+                  value={b.text}
+                  onChange={(md) => {
+                    const updated = [...item.bullets];
+                    updated[idx] = { ...updated[idx], text: md };
+                    onUpdate({ bullets: updated });
+                  }}
+                  className="w-full text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
+                  placeholder="输入要点…"
+                />
+              </div>
+            );
+          })
         ) : (
-          (aiViewMode !== "original" && item.aiBullets) ? (
-            aiComparisonPanel
-          ) : (
-            <div className="space-y-1.5">
-              {item.bullets.map((b, idx) => (
-                <div key={idx} className="text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden">
-                  <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
-                </div>
-              ))}
+          item.bullets.map((b, idx) => (
+            <div key={idx} className="text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden">
+              <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
             </div>
-          )
+          ))
         )}
       </div>
 
-      {/* AI control bar — shown when AI exists */}
-      {aiControlBar}
-
-      {/* AI optimize bar — below bullets during editing, always available */}
+      {/* Bullet count */}
       {isEditing && (
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-[12px] text-claude-muted-soft">{item.bullets.length} 条要点</span>
-          <button onClick={handleOptimize} disabled={!apiKey || optimizing} className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 transition-colors">
-            {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 润色中</> : <><Sparkles size={12} />{hasAi ? "重新 AI 润色" : "AI 润色"}</>}
-          </button>
-        </div>
+        <div className="text-[12px] text-claude-muted-soft pt-1">{item.bullets.length} 条要点</div>
       )}
     </div>
   );
@@ -946,32 +733,10 @@ function SkillsEditor({ skills, onUpdate }: { skills: Record<string, string[]>; 
 }
 
 // ─── SelfEvalEditor ───────────────────────────────
-function SelfEvalEditor({ selfEval, apiKey, onSave, onAiOptimize }: { selfEval: string; apiKey: string; onSave: (v: string) => void; onAiOptimize: () => Promise<AiSelfEval | null> }) {
+function SelfEvalEditor({ selfEval, onSave }: { selfEval: string; onSave: (v: string) => void }) {
   const [text, setText] = useState(selfEval);
-  const [optimizing, setOptimizing] = useState(false);
-  const [aiResult, setAiResult] = useState<AiSelfEval | null>(null);
-  const [aiViewMode, setAiViewMode] = useState<"original" | "ai" | "compare">("original");
   const editorRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setText(selfEval); }, [selfEval]);
-  const handleOptimize = async () => {
-    setOptimizing(true);
-    const result = await onAiOptimize();
-    if (result) { setAiResult(result); setAiViewMode("compare"); }
-    setOptimizing(false);
-  };
-
-  const handleAccept = () => {
-    if (!aiResult) return;
-    onSave(aiResult.rewritten);
-    setText(aiResult.rewritten);
-    setAiResult(null);
-    setAiViewMode("original");
-  };
-
-  const handleDismiss = () => {
-    setAiResult(null);
-    setAiViewMode("original");
-  };
 
   return (
     <div className="space-y-2">
@@ -983,70 +748,7 @@ function SelfEvalEditor({ selfEval, apiKey, onSave, onAiOptimize }: { selfEval: 
         placeholder="自我评价..."
         className="w-full text-[14px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[8px] px-3 py-2 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[60px]"
       />
-
-      {/* AI comparison view */}
-      {aiResult && (
-        <div className="space-y-2">
-          {aiViewMode !== "original" && (
-            <>
-              {aiViewMode === "compare" ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-orange-50/50 rounded-[6px] px-3 py-2 border border-orange-100">
-                      <div className="text-[10px] font-medium text-orange-600 mb-1">原文</div>
-                      <div className="text-[13px] leading-relaxed text-claude-body">{selfEval}</div>
-                    </div>
-                    <div className="bg-emerald-50/50 rounded-[6px] px-3 py-2 border border-emerald-100">
-                      <div className="text-[10px] font-medium text-emerald-600 mb-1">AI 润色</div>
-                      <div className="text-[13px] leading-relaxed text-claude-body">{aiResult.rewritten}</div>
-                    </div>
-                  </div>
-                  {aiResult.issues && (
-                    <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-                      <span className="font-medium text-claude-muted">弱点：</span>{aiResult.issues}
-                    </div>
-                  )}
-                  {aiResult.quantify && (
-                    <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-                      <span className="font-medium text-claude-muted">量化机会：</span>{aiResult.quantify}
-                    </div>
-                  )}
-                  <div className="text-[11px] text-claude-muted-soft bg-claude-canvas rounded-[4px] px-3 py-1.5">
-                    <span className="font-medium text-claude-muted">改写说明：</span>{aiResult.reason}
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-claude-canvas rounded-[6px] px-3 py-2">
-                  <div className="text-[13px] leading-relaxed text-claude-body">{aiResult.rewritten}</div>
-                  <div className="text-[11px] text-claude-muted-soft mt-2 pt-2 border-t border-claude-hairline-soft">{aiResult.reason}</div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* AI control bar */}
-          <div className="flex items-center justify-between pt-1 border-t border-claude-hairline-soft">
-            <span className="text-[12px] text-claude-muted-soft">AI 润色完成</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setAiViewMode("original")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "original" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>原文</button>
-              <button onClick={() => setAiViewMode("ai")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "ai" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>AI 版</button>
-              <button onClick={() => setAiViewMode("compare")} className={`text-[11px] font-medium px-2.5 py-1 rounded-[6px] transition-colors ${aiViewMode === "compare" ? "bg-claude-ink text-claude-on-dark" : "bg-claude-surface text-claude-muted hover:text-claude-ink"}`}>对照</button>
-              <span className="text-claude-hairline mx-1">|</span>
-              <button onClick={handleAccept} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">接受</button>
-              <button onClick={handleDismiss} className="text-[11px] font-medium px-2.5 py-1 rounded-[6px] bg-claude-surface text-claude-muted hover:text-red-500 transition-colors">放弃</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!aiResult && (
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-claude-muted-soft">{text.length} 字</span>
-          <button onClick={handleOptimize} disabled={!apiKey || !text.trim() || optimizing} className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium rounded-[8px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active disabled:opacity-50 transition-colors">
-            {optimizing ? <><Loader2 size={12} className="animate-spin" />AI 润色中</> : <><Sparkles size={12} />AI 润色</>}
-          </button>
-        </div>
-      )}
+      <div className="text-[12px] text-claude-muted-soft">{text.length} 字</div>
     </div>
   );
 }
@@ -1248,36 +950,6 @@ export default function LibraryPage() {
       const items = [...lib[section], newCard];
       return { ...s, libraries: { ...s.libraries, [activeDirection]: { ...lib, [section]: items } } };
     });
-  };
-
-  const handleAiOptimizeCard = async (section: CardSection, cardId: string, item: CardItem) => {
-    if (!apiKey) return;
-    // Preserve true originals across re-optimizations
-    const text = item.aiBullets
-      ? item.aiBullets.map(ab => ab.original).join("\n")
-      : item.bullets.map(b => b.text).join("\n");
-    const result = await optimizeCard(apiKey, text);
-    if (result) updateStore((s) => setAiVersion(s, activeDirection, section, cardId, result));
-  };
-
-  const handleAiReoptimizeBullet = async (
-    section: CardSection,
-    cardId: string,
-    bulletIdx: number,
-    aiBullets: AiBullet[]
-  ): Promise<AiBullet | null> => {
-    if (!apiKey) return null;
-    const result = await optimizeSingleBullet(apiKey, aiBullets[bulletIdx].original);
-    if (!result) return null;
-    const updated = [...aiBullets];
-    updated[bulletIdx] = result;
-    updateStore((s) => setAiVersion(s, activeDirection, section, cardId, updated));
-    return result;
-  };
-
-  const handleAiSelfEval = async (): Promise<AiSelfEval | null> => {
-    if (!apiKey || !library.selfEval.trim()) return null;
-    return await optimizeSelfEval(apiKey, library.selfEval);
   };
 
   const handleCopy = () => { navigator.clipboard.writeText(resumeText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
@@ -1935,7 +1607,7 @@ export default function LibraryPage() {
                         >
                           {editing ? (
                             <div className="space-y-4">
-                              <SelfEvalEditor selfEval={se} apiKey={apiKey} onSave={(v) => updateStore((s) => updateSelfEval(s, activeDirection, v))} onAiOptimize={handleAiSelfEval} />
+                              <SelfEvalEditor selfEval={se} onSave={(v) => updateStore((s) => updateSelfEval(s, activeDirection, v))} />
                               <div className="border-t border-claude-hairline" />
                               <CustomFieldsEditor
                                 fields={store.shared.customFields["selfEval"] || []}
@@ -2019,11 +1691,9 @@ export default function LibraryPage() {
                                                 {items.map((item) => (
                                                   <SortableCard key={item.id} id={item.id}>
                                                     <ResumeCard
-                                                      item={item} section={subKey} apiKey={apiKey}
+                                                      item={item}
                                                       forceEdit={subEditing} saveAllKey={saveAllKey}
                                                       onUpdate={(updates) => updateStore((s) => updateCard(s, activeDirection, subKey, item.id, updates))}
-                                                      onAiOptimize={() => handleAiOptimizeCard(subKey, item.id, item)}
-                                                      onReoptimizeBullet={async (idx) => { await handleAiReoptimizeBullet(subKey, item.id, idx, item.aiBullets!); }}
                                                       onDelete={() => updateStore((s) => deleteCard(s, activeDirection, subKey, item.id))}
                                                     />
                                                   </SortableCard>
