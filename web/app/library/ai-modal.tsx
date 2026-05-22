@@ -96,7 +96,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   const resizing = useRef<{ dir: string; sx: number; sy: number; sw: number; sh: number; sl: number; st: number } | null>(null);
 
   const MIN_W = 360;
-  const MIN_H = 280;
+  const MIN_H = 340;
 
   const currentW = panelSize?.w ?? PANEL_W;
   const currentH = panelSize?.h;
@@ -386,7 +386,10 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       </div>
 
       {/* Body */}
-      <div className="overflow-y-auto min-h-0 select-text" style={{ flex: "0 1 auto" }}>
+      <div
+        className="overflow-y-auto min-h-0 select-text"
+        style={{ flex: panelSize ? "1 1 0%" : "0 1 auto", minHeight: panelSize ? undefined : 240 }}
+      >
         {tab === "polish" ? (
           <div className="p-4 space-y-3">
             {/* Selected card indicator */}
