@@ -38,6 +38,7 @@ const MAX_H_PCT = 0.85;
 
 export default function AiModal({ open, onClose, apiKey, selectedText, selectedLabel, onAcceptPolish }: AiModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -98,6 +99,19 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   const MIN_W = 360;
   const MIN_H = 340;
 
+  // Measure panel height in auto mode to derive dynamic minimum for resize.
+  // The minimum equals the auto-fit size — user can't resize smaller than content needs.
+  const effectiveMinHRef = useRef(340);
+  useEffect(() => {
+    if (panelSize !== null || !panelRef.current || !open) return;
+    const raf = requestAnimationFrame(() => {
+      if (panelRef.current) {
+        effectiveMinHRef.current = Math.max(200, panelRef.current.offsetHeight);
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+
   const currentW = panelSize?.w ?? PANEL_W;
   const currentH = panelSize?.h;
 
@@ -151,15 +165,17 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       let nl = r.sl;
       let nt = r.st;
 
-      const maxW = Math.max(MIN_W, window.innerWidth / 2);
-      const maxH = Math.max(MIN_H, window.innerHeight / 2);
+      const minW = 320;
+      const minH = effectiveMinHRef.current;
+      const maxW = Math.max(minW, window.innerWidth / 2);
+      const maxH = Math.max(minH, window.innerHeight / 2);
 
-      if (r.dir.includes("e")) nw = Math.min(maxW, Math.max(MIN_W, r.sw + dx));
-      if (r.dir.includes("w")) { nw = Math.min(maxW, Math.max(MIN_W, r.sw - dx)); nl = r.sl + (r.sw - nw); }
-      if (r.dir.includes("s")) nh = Math.min(maxH, Math.max(MIN_H, r.sh + dy));
-      if (r.dir.includes("n")) { nh = Math.min(maxH, Math.max(MIN_H, r.sh - dy)); nt = r.st + (r.sh - nh); }
+      if (r.dir.includes("e")) nw = Math.min(maxW, Math.max(minW, r.sw + dx));
+      if (r.dir.includes("w")) { nw = Math.min(maxW, Math.max(minW, r.sw - dx)); nl = r.sl + (r.sw - nw); }
+      if (r.dir.includes("s")) nh = Math.min(maxH, Math.max(minH, r.sh + dy));
+      if (r.dir.includes("n")) { nh = Math.min(maxH, Math.max(minH, r.sh - dy)); nt = r.st + (r.sh - nh); }
 
-      nl = Math.max(0, Math.min(nl, window.innerWidth - MIN_W));
+      nl = Math.max(0, Math.min(nl, window.innerWidth - minW));
       nt = Math.max(0, Math.min(nt, window.innerHeight - MINIMIZED_SIZE));
 
       setPanelSize({ w: nw, h: nh });
@@ -387,8 +403,9 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
 
       {/* Body */}
       <div
+        ref={bodyRef}
         className="overflow-y-auto min-h-0 select-text"
-        style={{ flex: panelSize ? "1 1 0%" : "0 1 auto", minHeight: panelSize ? undefined : 240 }}
+        style={{ flex: panelSize ? "1 1 0%" : "0 1 auto" }}
       >
         {tab === "polish" ? (
           <div className="p-4 space-y-3">
@@ -441,7 +458,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
                         }`}>
                           {activeBulletIdx === i && <span className="w-1.5 h-1.5 rounded-full bg-claude-primary" />}
                         </span>
-                        <span className="truncate">{b}</span>
+                        <span className="break-words whitespace-normal text-[11px] leading-relaxed">{b}</span>
                       </button>
                     ))}
                   </div>
@@ -670,7 +687,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
                             <span className="text-claude-muted">{q.label}</span>
                             {val && <span className="text-claude-muted-soft ml-auto">✓</span>}
                           </div>
-                          <p className="truncate">{val ? val.slice(0, 20) + (val.length > 20 ? "…" : "") : "点击填写"}</p>
+                          <p className="text-[11px] leading-relaxed break-words line-clamp-2">{val || "点击填写"}</p>
                         </button>
                       );
                     })}
