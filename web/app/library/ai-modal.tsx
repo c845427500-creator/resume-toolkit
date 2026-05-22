@@ -40,7 +40,6 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
   const [tab, setTab] = useState<AiTab>("polish");
@@ -118,20 +117,31 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
   const onDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (!panelRef.current) return;
     e.preventDefault();
-    const rect = panelRef.current.getBoundingClientRect();
+    const panel = panelRef.current;
+    const rect = panel.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startL = rect.left;
+    const startT = rect.top;
+    const startW = rect.width;
+    // Lock initial DOM styles so subsequent React re-render doesn't flicker
+    panel.style.left = `${startL}px`;
+    panel.style.top = `${startT}px`;
+    panel.style.transform = "none";
     dragging.current = true;
-    dragStart.current = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
-    panelRef.current.setPointerCapture(e.pointerId);
+    panel.setPointerCapture(e.pointerId);
 
     const onMove = (ev: PointerEvent) => {
-      if (!dragging.current) return;
-      const dx = ev.clientX - dragStart.current.x;
-      const dy = ev.clientY - dragStart.current.y;
-      let left = dragStart.current.left + dx;
-      let top = dragStart.current.top + dy;
-      left = Math.max(0, Math.min(left, window.innerWidth - (panelSize?.w ?? PANEL_W)));
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      let left = startL + dx;
+      let top = startT + dy;
+      left = Math.max(0, Math.min(left, window.innerWidth - startW));
       top = Math.max(0, Math.min(top, window.innerHeight - MINIMIZED_SIZE));
-      setPosition({ left, top });
+      // Direct DOM — bypass React render during drag for 60fps smoothness
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+      panel.style.transform = "none";
     };
 
     const cleanup = () => {
@@ -139,21 +149,41 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", cleanup);
       window.removeEventListener("pointercancel", cleanup);
-      try { panelRef.current?.releasePointerCapture(e.pointerId); } catch {}
+      try { panel.releasePointerCapture(e.pointerId); } catch {}
+      // Sync final position back to React state
+      const r = panel.getBoundingClientRect();
+      setPosition({ left: r.left, top: r.top });
     };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", cleanup);
     window.addEventListener("pointercancel", cleanup);
-  }, [panelSize?.w]);
+  }, []);
 
   const onResizePointerDown = useCallback((dir: string) => (e: React.PointerEvent) => {
     if (!panelRef.current) return;
     e.preventDefault();
     e.stopPropagation();
-    const rect = panelRef.current.getBoundingClientRect();
-    resizing.current = { dir, sx: e.clientX, sy: e.clientY, sw: rect.width, sh: rect.height, sl: rect.left, st: rect.top };
-    panelRef.current.setPointerCapture(e.pointerId);
+    const panel = panelRef.current;
+    const rect = panel.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = rect.width;
+    const startH = rect.height;
+    const startL = rect.left;
+    const startT = rect.top;
+    resizing.current = { dir, sx: startX, sy: startY, sw: startW, sh: startH, sl: startL, st: startT };
+    // Lock initial DOM styles so React re-render doesn't flicker
+    panel.style.width = `${startW}px`;
+    panel.style.height = `${startH}px`;
+    panel.style.left = `${startL}px`;
+    panel.style.top = `${startT}px`;
+    panel.style.transform = "none";
+    panel.setPointerCapture(e.pointerId);
+
+    // Immediately set panelSize so body switches from flex:0 1 auto to flex:1 1 0%
+    // (fills remaining space instead of being content-sized — fixes buttons getting clipped)
+    setPanelSize({ w: startW, h: startH });
 
     const onMove = (ev: PointerEvent) => {
       const r = resizing.current;
@@ -178,8 +208,12 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       nl = Math.max(0, Math.min(nl, window.innerWidth - minW));
       nt = Math.max(0, Math.min(nt, window.innerHeight - MINIMIZED_SIZE));
 
-      setPanelSize({ w: nw, h: nh });
-      setPosition({ left: nl, top: nt });
+      // Direct DOM — bypass React render during resize for 60fps smoothness
+      panel.style.width = `${nw}px`;
+      panel.style.height = `${nh}px`;
+      panel.style.left = `${nl}px`;
+      panel.style.top = `${nt}px`;
+      panel.style.transform = "none";
     };
 
     const cleanup = () => {
@@ -187,7 +221,11 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", cleanup);
       window.removeEventListener("pointercancel", cleanup);
-      try { panelRef.current?.releasePointerCapture(e.pointerId); } catch {}
+      try { panel.releasePointerCapture(e.pointerId); } catch {}
+      // Sync final size & position back to React state
+      const r = panel.getBoundingClientRect();
+      setPanelSize({ w: r.width, h: r.height });
+      setPosition({ left: r.left, top: r.top });
     };
 
     window.addEventListener("pointermove", onMove);
@@ -320,9 +358,19 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
 
   if (!open) return null;
 
-  const style = position
+  // During active drag/resize, DOM styles are set directly for 60fps performance.
+  // Skip React-controlled position/size to avoid overriding DOM.
+  const isActive = resizing.current !== null || dragging.current;
+
+  // Position style — only when NOT actively dragging/resizing and position is known
+  const positionStyle = (!isActive && position)
     ? { left: position.left, top: position.top, transform: "none" }
-    : { left: `calc(50% - ${currentW / 2}px)`, top: "50%", transform: "translateY(-50%)" };
+    : {};
+
+  // Default centered style — only when no position AND not active
+  const centeredStyle = (!isActive && !position)
+    ? { left: `calc(50% - ${currentW / 2}px)`, top: "50%", transform: "translateY(-50%)" }
+    : {};
 
   return (
     <motion.div
@@ -332,10 +380,11 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       style={{
-        ...style,
-        width: currentW,
-        height: currentH || "auto",
-        maxHeight: panelSize ? undefined : `min(${Math.floor(window.innerHeight / 2)}px, 80vh)`,
+        ...centeredStyle,
+        ...positionStyle,
+        width: isActive ? undefined : currentW,
+        height: isActive ? undefined : (currentH || "auto"),
+        maxHeight: (isActive || panelSize) ? undefined : `min(${Math.floor(window.innerHeight / 2)}px, 80vh)`,
         // Apple frosted glass: 75% transparent (25% overlay) — the background page bleeds through
         background: "linear-gradient(135deg, rgba(252,249,243,0.25) 0%, rgba(246,240,229,0.28) 100%)",
         borderColor: "rgba(255,255,255,0.22)",
