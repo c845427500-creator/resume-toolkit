@@ -111,6 +111,32 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
     return () => cancelAnimationFrame(raf);
   });
 
+  // Detect when auto-mode content exceeds maxHeight so body can be
+  // constrained (flex:1 1 0%) and scroll, instead of being clipped
+  // by the panel's overflow-hidden. CSS max-height on a flex container
+  // does not reliably constrain flex:0 1 auto children across browsers.
+  const [bodyConstrained, setBodyConstrained] = useState(false);
+  const constrainedHeightRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (panelSize !== null || !bodyRef.current || !open) {
+      setBodyConstrained(false);
+      constrainedHeightRef.current = null;
+      return;
+    }
+    const el = bodyRef.current;
+    const maxH = Math.min(Math.floor(window.innerHeight / 2), window.innerHeight * 0.8);
+    const headerH = 52; // drag handle + header + indicator
+    const check = () => {
+      const overflows = el.scrollHeight > maxH - headerH;
+      setBodyConstrained(overflows);
+      constrainedHeightRef.current = overflows ? maxH : null;
+    };
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    check();
+    return () => ro.disconnect();
+  }, [panelSize, open]);
+
   const currentW = panelSize?.w ?? PANEL_W;
   const currentH = panelSize?.h;
 
@@ -383,7 +409,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
         ...centeredStyle,
         ...positionStyle,
         width: isActive ? undefined : currentW,
-        height: isActive ? undefined : (currentH || "auto"),
+        height: isActive ? undefined : (currentH || (constrainedHeightRef.current ? `${constrainedHeightRef.current}px` : "auto")),
         maxHeight: (isActive || panelSize) ? undefined : `min(${Math.floor(window.innerHeight / 2)}px, 80vh)`,
         // Apple frosted glass: 75% transparent (25% overlay) — the background page bleeds through
         background: "linear-gradient(135deg, rgba(252,249,243,0.25) 0%, rgba(246,240,229,0.28) 100%)",
@@ -454,7 +480,7 @@ export default function AiModal({ open, onClose, apiKey, selectedText, selectedL
       <div
         ref={bodyRef}
         className="overflow-y-auto min-h-0 select-text"
-        style={{ flex: panelSize ? "1 1 0%" : "0 1 auto" }}
+        style={{ flex: (panelSize || bodyConstrained) ? "1 1 0%" : "0 1 auto" }}
       >
         {tab === "polish" ? (
           <div className="p-4 space-y-3">
