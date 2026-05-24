@@ -1482,6 +1482,18 @@ export default function LibraryPage() {
           <button onClick={filterMode ? undefined : handleCopy} disabled={filterMode} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors disabled:opacity-30">
             {copied ? <><Check size={12} />已复制</> : <><Copy size={12} />复制全文</>}
           </button>
+          <button onClick={() => {
+            if (!store) return;
+            const payload = {
+              shared: store.shared,
+              libraries: store.libraries,
+              directions: [...DEFAULT_JOB_TYPES.filter(d => store.libraries[d]), ...store.customDirections],
+            };
+            navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+            setCopied(true); setTimeout(() => setCopied(false), 2000);
+          }} className="flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors">
+            <Copy size={12} />同步到插件
+          </button>
           {undoSnapshot ? (
             <button
               onClick={() => {
@@ -1998,8 +2010,16 @@ export default function LibraryPage() {
           </SortableContext>
         </DndContext>
 
-        <div className="text-center py-6">
-          <p className="text-[12px] text-claude-muted-soft">配合浏览器插件「简历库助手」使用</p>
+        <div className="text-center py-6 space-y-1.5">
+          <p className="text-[12px] text-claude-muted-soft">
+            配合浏览器插件「简历库助手」使用 ·
+            <a href="https://github.com/c845427500-creator/resume-toolkit/tree/main/extension" target="_blank" rel="noopener" className="text-claude-primary hover:text-claude-primary-active underline underline-offset-2 ml-0.5">
+              安装说明
+            </a>
+          </p>
+          <p className="text-[11px] text-claude-muted-soft/70">
+            点击顶部「同步到插件」→ 在插件弹窗中「导入」JSON 即可
+          </p>
         </div>
 
         {/* Filter mode bottom bar */}

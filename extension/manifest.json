@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "简历库助手",
-  "version": "1.0",
-  "description": "一键将简历库中的内容填入网页表单，支持下拉框智能匹配",
+  "version": "2.0",
+  "description": "多方向简历一键填入，支持下拉框智能匹配。配合 简历工具箱 使用",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {
