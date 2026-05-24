@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp, Sparkles } from "lucide-react";
+import { Copy, Check, Loader2, Trash2, Download, Edit3, Save, X, Plus, Settings, GripVertical, Bold, Italic, Underline, List, Camera, ChevronDown, ArrowUp, Sparkles, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -14,6 +14,7 @@ import {
   updatePersonal, updateEducation, updateFamily, updateCustomFields,
   updateCard, deleteCard, updateSkills, updateSelfEval,
   reorderCards, resetLibrary, exportLibrary,
+  undoAiPolish,
   addCustomDirection, removeCustomDirection, setDirectionLibrary,
   importParsedResume,
   DEFAULT_JOB_TYPES,
@@ -271,7 +272,7 @@ function SortableCard({ id, children }: { id: string; children: React.ReactNode 
 
 // ─── ResumeCard ───────────────────────────────────
 function ResumeCard({
-  item, onUpdate, onDelete, forceEdit, saveAllKey, onSelectForAi,
+  item, onUpdate, onDelete, forceEdit, saveAllKey, onSelectForAi, onUndoPolish,
 }: {
   item: CardItem;
   onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets">>) => void;
@@ -279,10 +280,12 @@ function ResumeCard({
   forceEdit?: boolean;
   saveAllKey?: number;
   onSelectForAi?: () => void;
+  onUndoPolish?: (bulletIdx: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const isEditing = editing || forceEdit;
   const snapshotRef = useRef<{ text: string; tags: string[] }[] | null>(null);
+  const [expandedOriginals, setExpandedOriginals] = useState<Set<number>>(new Set());
   const bulletRefObjs = useRef<{ current: HTMLDivElement | null }[]>([]);
   if (bulletRefObjs.current.length < item.bullets.length) {
     for (let i = bulletRefObjs.current.length; i < item.bullets.length; i++) {
@@ -301,9 +304,10 @@ function ResumeCard({
     if (snapshotRef.current) onUpdate({ bullets: snapshotRef.current });
     snapshotRef.current = null;
     setEditing(false);
+    setExpandedOriginals(new Set());
   };
 
-  const handleSave = () => { snapshotRef.current = null; setEditing(false); };
+  const handleSave = () => { snapshotRef.current = null; setEditing(false); setExpandedOriginals(new Set()); };
 
   return (
     <div className="bg-claude-surface-card rounded-[10px] border border-claude-hairline p-4 pl-7 space-y-3">
@@ -357,6 +361,8 @@ function ResumeCard({
         {isEditing ? (
           item.bullets.map((b, idx) => {
             const refObj = bulletRefObjs.current[idx];
+            const hasOriginal = !!b.originalText;
+            const expanded = expandedOriginals.has(idx);
             return (
               <div key={idx} className="space-y-1">
                 <MarkdownToolbar editorRef={refObj} />
@@ -372,17 +378,59 @@ function ResumeCard({
                     className="flex-1 text-[13px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[6px] px-2.5 py-1.5 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[36px]"
                     placeholder="输入要点…"
                   />
-                  <button
-                    onClick={() => {
-                      const updated = item.bullets.filter((_, i) => i !== idx);
-                      onUpdate({ bullets: updated });
-                    }}
-                    className="w-6 h-6 flex items-center justify-center rounded-[4px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors shrink-0 mt-0.5"
-                    title="删除此要点"
-                  >
-                    <X size={13} />
-                  </button>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0 mt-0.5">
+                    <button
+                      onClick={() => {
+                        const updated = item.bullets.filter((_, i) => i !== idx);
+                        onUpdate({ bullets: updated });
+                      }}
+                      className="w-6 h-6 flex items-center justify-center rounded-[4px] hover:bg-red-50 text-claude-muted-soft hover:text-red-500 transition-colors"
+                      title="删除此要点"
+                    >
+                      <X size={13} />
+                    </button>
+                    {hasOriginal && (
+                      <button
+                        onClick={() => {
+                          const next = new Set(expandedOriginals);
+                          expanded ? next.delete(idx) : next.add(idx);
+                          setExpandedOriginals(next);
+                        }}
+                        className={`w-6 h-6 flex items-center justify-center rounded-[4px] transition-colors ${
+                          expanded
+                            ? "bg-amber-100/60 text-amber-700 hover:bg-amber-100"
+                            : "hover:bg-amber-50 text-claude-muted-soft hover:text-amber-600"
+                        }`}
+                        title={expanded ? "收起原文" : "查看 AI 润色前的原文"}
+                      >
+                        {expanded ? <ArrowUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {/* Expanded original text */}
+                {hasOriginal && expanded && (
+                  <div className="ml-0 rounded-[6px] border-l-2 border-amber-400/60 bg-amber-50/50 px-3 py-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-amber-700/70 uppercase tracking-wider">AI 润色前的原文</span>
+                      <button
+                        onClick={() => {
+                          const updated = [...item.bullets];
+                          updated[idx] = { ...updated[idx], text: b.originalText! };
+                          onUpdate({ bullets: updated });
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] text-amber-700 hover:bg-amber-100/80 transition-colors"
+                        title="替换为原文"
+                      >
+                        <RotateCcw size={10} />
+                        <span>恢复原文</span>
+                      </button>
+                    </div>
+                    <p className="text-[12px] text-claude-muted leading-relaxed whitespace-pre-wrap break-words">
+                      {b.originalText}
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })
@@ -394,7 +442,7 @@ function ResumeCard({
             }}
           >
             {item.bullets.map((b, idx) => (
-              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`}>
+              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`} style={b.originalText ? { borderLeft: "2px solid rgba(251,191,36,0.6)", paddingLeft: 10 } : undefined}>
                 <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
               </div>
             ))}
@@ -882,6 +930,8 @@ export default function LibraryPage() {
   const [selectedCardText, setSelectedCardText] = useState("");
   const [selectedCardLabel, setSelectedCardLabel] = useState("");
   const [selectedCardSource, setSelectedCardSource] = useState<{ type: "selfEval" } | { type: "card"; section: string; cardId: string } | null>(null);
+  const [aiBtnPos, setAiBtnPos] = useState({ right: 24, bottom: 112 });
+  const aiBtnDragRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, startRight: 24, startBottom: 112 });
   useEffect(() => { setUndoSnapshot(null); }, [activeDirection]);
   const [hiddenDefaultDirs, setHiddenDefaultDirs] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -987,18 +1037,56 @@ export default function LibraryPage() {
     });
   };
 
-  const handleAcceptPolish = (text: string) => {
+  const handleAcceptPolish = (text: string, originalText: string) => {
     if (!selectedCardSource) return;
     if (selectedCardSource.type === "selfEval") {
       updateStore((s) => updateSelfEval(s, activeDirection, text));
     } else if (selectedCardSource.type === "card") {
-      const bullets = text
+      const originalBullets = originalText
+        .split(/\n/)
+        .filter((b) => b.trim().length > 0)
+        .map((b) => b.trim());
+      const acceptedBullets = text
         .split(/\n/)
         .map((b) => b.replace(/^[•·\-]\s*/, "").trim())
         .filter((b) => b.length > 0)
-        .map((b) => ({ text: b, tags: [] as string[] }));
-      if (bullets.length > 0) {
-        updateStore((s) => updateCard(s, activeDirection, selectedCardSource.section as CardSection, selectedCardSource.cardId, { bullets }));
+        .map((b, i) => ({
+          text: b,
+          tags: [] as string[],
+          originalText: originalBullets[i] || undefined,
+        }));
+      if (acceptedBullets.length > 0) {
+        updateStore((s) => {
+          const lib = s.libraries[activeDirection];
+          if (!lib) return s;
+          const section = selectedCardSource.section as CardSection;
+          const items = lib[section];
+          const idx = items.findIndex((item) => item.id === selectedCardSource.cardId);
+          if (idx === -1) return s;
+          const card = items[idx];
+
+          let finalBullets;
+          if (acceptedBullets.length >= card.bullets.length) {
+            finalBullets = acceptedBullets;
+          } else {
+            finalBullets = card.bullets.map((b) => {
+              const match = acceptedBullets.find(
+                (ab) => ab.originalText && ab.originalText === b.text,
+              );
+              return match || b;
+            });
+          }
+
+          const updated = [...items];
+          updated[idx] = { ...card, bullets: finalBullets };
+          return {
+            ...s,
+            libraries: {
+              ...s.libraries,
+              [activeDirection]: { ...lib, [section]: updated },
+            },
+          };
+        });
       }
     }
     setSelectedCardSource(null);
@@ -1007,6 +1095,42 @@ export default function LibraryPage() {
   };
 
   const handleCopy = () => { navigator.clipboard.writeText(resumeText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  const handleAiBtnDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    aiBtnDragRef.current = {
+      dragging: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      startRight: aiBtnPos.right,
+      startBottom: aiBtnPos.bottom,
+    };
+  }, [aiBtnPos]);
+
+  const handleAiBtnDragMove = useCallback((e: React.PointerEvent) => {
+    const d = aiBtnDragRef.current;
+    if (!d.dragging) return;
+    const dx = d.startX - e.clientX;
+    const dy = d.startY - e.clientY;
+    const newRight = Math.max(8, Math.min(window.innerWidth - 56, d.startRight + dx));
+    const newBottom = Math.max(48, Math.min(window.innerHeight - 100, d.startBottom + dy));
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+    setAiBtnPos({ right: newRight, bottom: newBottom });
+  }, []);
+
+  const handleAiBtnDragEnd = useCallback((e: React.PointerEvent) => {
+    const d = aiBtnDragRef.current;
+    d.dragging = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (!d.moved) {
+      setAiModalOpen(true);
+      setSelectedCardText("");
+      setSelectedCardLabel("");
+      setSelectedCardSource(null);
+    }
+  }, []);
 
   // Export modal helpers
   const allExportKeys = () => {
@@ -1763,6 +1887,7 @@ export default function LibraryPage() {
                                                         setSelectedCardLabel(`${item.name || "(空)"} · ${item.role || ""}`);
                                                         setSelectedCardSource({ type: "card", section: subKey, cardId: item.id });
                                                       } : undefined}
+                                                      onUndoPolish={(bulletIdx) => updateStore((s) => undoAiPolish(s, activeDirection, subKey, item.id, bulletIdx))}
                                                     />
                                                   </SortableCard>
                                                 ))}
@@ -1807,30 +1932,34 @@ export default function LibraryPage() {
         </button>
       )}
 
-      {/* Floating AI button — glassmorphism */}
+      {/* Floating AI button — glassmorphism, draggable */}
       <button
-        onClick={() => { setAiModalOpen(true); setSelectedCardText(""); setSelectedCardLabel(""); setSelectedCardSource(null); }}
-        className="fixed bottom-28 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95 backdrop-blur-xl"
+        onPointerDown={handleAiBtnDragStart}
+        onPointerMove={handleAiBtnDragMove}
+        onPointerUp={handleAiBtnDragEnd}
+        className="fixed z-40 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-xl select-none touch-none"
         style={{
+          right: aiBtnPos.right,
+          bottom: aiBtnPos.bottom,
           background: "rgba(184,117,74,0.72)",
           border: "1px solid rgba(255,255,255,0.22)",
           boxShadow: "0 0 0 0.5px rgba(255,252,248,0.25), inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 20px rgba(80,50,20,0.12), 0 8px 32px rgba(80,50,20,0.06)",
+          transition: "box-shadow 0.2s, background 0.2s",
         }}
-        title="AI 助手"
+        title="AI 助手（可拖拽移动）"
       >
-        <Sparkles size={20} className="text-white/95" />
+        <Sparkles size={20} className="text-white/95 pointer-events-none" />
       </button>
 
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-claude-surface-dark">
-        <div className="max-w-[1200px] mx-auto flex items-center px-6 h-12">
+        <div className="w-full max-w-screen-lg mx-auto flex items-center px-6 h-12">
           <Link href="/" className="flex-1 flex items-center justify-center gap-1.5 py-2 text-claude-on-dark-soft hover:text-claude-on-dark transition-colors">
             <span className="text-[13px]">首页</span>
           </Link>
           <span className="flex-1 flex items-center justify-center gap-1.5 py-2">
             <span className="text-[13px] font-medium text-claude-on-dark">简历库</span>
           </span>
-          <span className="flex-1" />
         </div>
       </nav>
 
