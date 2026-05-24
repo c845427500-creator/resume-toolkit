@@ -13,7 +13,7 @@ import {
   initStore, saveStore, getLibrary,
   updatePersonal, updateEducation, updateFamily, updateCustomFields,
   updateCard, deleteCard, updateSkills, updateSelfEval,
-  reorderCards, resetLibrary, exportLibrary,
+  reorderCards, resetLibrary,
   undoAiPolish,
   addCustomDirection, removeCustomDirection, setDirectionLibrary,
   importParsedResume,
@@ -1033,12 +1033,6 @@ export default function LibraryPage() {
   const saveNickname = (n: string) => { setNickname(n); localStorage.setItem("resume_nickname", n); setEditingNickname(false); };
   const saveApiKey = (key: string) => { setApiKey(key); if (key) localStorage.setItem("ds_api_key", key); else localStorage.removeItem("ds_api_key"); setApiKeyModal(false); };
 
-  const resumeText = useMemo(() => {
-    if (!store) return "";
-    const exp = exportLibrary(store, activeDirection);
-    return exp;
-  }, [store, activeDirection]);
-
   // Handlers
   const updateStore = useCallback((fn: (s: ResumeStore) => ResumeStore) => {
     setStore((prev) => { if (!prev) return prev; const next = fn(prev); saveStore(next); return next; });
@@ -1136,8 +1130,6 @@ export default function LibraryPage() {
     setSelectedCardText("");
     setSelectedCardLabel("");
   };
-
-  const handleCopy = () => { navigator.clipboard.writeText(resumeText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   const handleAiBtnDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -1479,10 +1471,7 @@ export default function LibraryPage() {
           <button onClick={toggleFilterMode} className={`flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] border transition-colors ${filterMode ? "bg-claude-primary text-claude-on-primary border-claude-primary" : "bg-claude-surface-card border-claude-hairline text-claude-ink hover:bg-claude-surface"}`}>
             <Download size={12} />{filterMode ? "退出筛选" : "筛选导出"}
           </button>
-          <button onClick={filterMode ? undefined : handleCopy} disabled={filterMode} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors disabled:opacity-30">
-            {copied ? <><Check size={12} />已复制</> : <><Copy size={12} />复制全文</>}
-          </button>
-          <button onClick={() => {
+<button onClick={() => {
             if (!store) return;
             const payload = {
               shared: store.shared,
