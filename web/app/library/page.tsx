@@ -273,6 +273,7 @@ function SortableCard({ id, children }: { id: string; children: React.ReactNode 
 // ─── ResumeCard ───────────────────────────────────
 function ResumeCard({
   item, onUpdate, onDelete, forceEdit, saveAllKey, onSelectForAi, onUndoPolish,
+  filterMode, isChecked, onToggleCheck,
 }: {
   item: CardItem;
   onUpdate: (updates: Partial<Pick<CardItem, "name" | "department" | "role" | "period" | "bullets">>) => void;
@@ -281,6 +282,9 @@ function ResumeCard({
   saveAllKey?: number;
   onSelectForAi?: () => void;
   onUndoPolish?: (bulletIdx: number) => void;
+  filterMode?: boolean;
+  isChecked?: boolean;
+  onToggleCheck?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const isEditing = editing || forceEdit;
@@ -313,6 +317,9 @@ function ResumeCard({
     <div className="bg-claude-surface-card rounded-[10px] border border-claude-hairline p-4 pl-7 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
+        {filterMode && (
+          <input type="checkbox" checked={isChecked} onChange={onToggleCheck} className="accent-claude-primary w-4 h-4 mt-0.5 shrink-0 cursor-pointer" />
+        )}
         <div className="flex-1 min-w-0">
           {isEditing ? (
             <div className="space-y-1.5">
@@ -953,7 +960,7 @@ export default function LibraryPage() {
   const [showAddDirection, setShowAddDirection] = useState(false);
   const [newDirection, setNewDirection] = useState("");
   const [addingDirection, setAddingDirection] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
+  const [filterMode, setFilterMode] = useState(false);
   const [exportSelection, setExportSelection] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [editingSections, setEditingSections] = useState<Set<string>>(new Set());
@@ -1277,12 +1284,14 @@ export default function LibraryPage() {
     const a = document.createElement("a");
     a.href = url; a.download = "简历.txt"; a.click();
     URL.revokeObjectURL(url);
-    setShowExportModal(false);
+    setFilterMode(false);
   };
 
-  const openExportModal = () => {
-    setExportSelection(allExportKeys());
-    setShowExportModal(true);
+  const toggleFilterMode = () => {
+    if (!filterMode) {
+      setExportSelection(allExportKeys());
+    }
+    setFilterMode(!filterMode);
   };
 
   const handleAddDirection = async () => {
@@ -1463,8 +1472,8 @@ export default function LibraryPage() {
             一键保存
           </button>
           <div className="flex-1" />
-          <button onClick={openExportModal} className="flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors">
-            <Download size={12} />导出
+          <button onClick={toggleFilterMode} className={`flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] border transition-colors ${filterMode ? "bg-claude-primary text-claude-on-primary border-claude-primary" : "bg-claude-surface-card border-claude-hairline text-claude-ink hover:bg-claude-surface"}`}>
+            <Download size={12} />{filterMode ? "退出筛选" : "筛选导出"}
           </button>
           <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors">
             {copied ? <><Check size={12} />已复制</> : <><Copy size={12} />复制全文</>}
@@ -1513,7 +1522,9 @@ export default function LibraryPage() {
                       return (
                         <SortableSection key="personal" id="personal" title="个人信息"
                           actions={
-                            editing ? (
+                            filterMode ? (
+                              <input type="checkbox" checked={exportSelection.has("personal")} onChange={() => toggleExportKey("personal")} className="accent-claude-primary w-4 h-4 cursor-pointer" />
+                            ) : editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
@@ -1606,7 +1617,15 @@ export default function LibraryPage() {
                       return (
                         <SortableSection key="education" id="education" title="教育经历"
                           actions={
-                            editing ? (
+                            filterMode ? (
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={exportSelection.has("edu:undergrad") && exportSelection.has("edu:master") && exportSelection.has("edu:highSchool")} onChange={() => {
+                                  const allKeys = ["edu:undergrad", "edu:master", "edu:highSchool"];
+                                  const allChecked = allKeys.every((k) => exportSelection.has(k));
+                                  setExportSelection((prev) => { const next = new Set(prev); allKeys.forEach((k) => allChecked ? next.delete(k) : next.add(k)); return next; });
+                                }} className="accent-claude-primary w-4 h-4 cursor-pointer" />
+                              </div>
+                            ) : editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
@@ -1691,7 +1710,9 @@ export default function LibraryPage() {
                       return (
                         <SortableSection key="family" id="family" title="家庭成员"
                           actions={
-                            editing ? (
+                            filterMode ? (
+                              <input type="checkbox" checked={exportSelection.has("family")} onChange={() => toggleExportKey("family")} className="accent-claude-primary w-4 h-4 cursor-pointer" />
+                            ) : editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
@@ -1749,7 +1770,9 @@ export default function LibraryPage() {
                       return (
                         <SortableSection key="skills" id="skills" title="技能"
                           actions={
-                            editing ? (
+                            filterMode ? (
+                              <input type="checkbox" checked={exportSelection.has("skills")} onChange={() => toggleExportKey("skills")} className="accent-claude-primary w-4 h-4 cursor-pointer" />
+                            ) : editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
@@ -1809,7 +1832,9 @@ export default function LibraryPage() {
                       return (
                         <SortableSection key="selfEval" id="selfEval" title="自我评价"
                           actions={
-                            editing ? (
+                            filterMode ? (
+                              <input type="checkbox" checked={exportSelection.has("selfEval")} onChange={() => toggleExportKey("selfEval")} className="accent-claude-primary w-4 h-4 cursor-pointer" />
+                            ) : editing ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] hover:bg-claude-cream-strong text-claude-muted transition-colors">取消</button>
                                 <button onClick={toggle} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5"><Save size={14} /></button>
@@ -1886,16 +1911,25 @@ export default function LibraryPage() {
                                         if (next.has(subKey)) next.delete(subKey); else next.add(subKey);
                                         return next;
                                       });
+                                      const prefix = subKey === "experiences" ? "exp" : subKey === "projects" ? "proj" : subKey === "campus" ? "cam" : "soc";
                                       const subActions = (
                                         <div className="flex items-center gap-1">
-                                          {subEditing ? (
-                                            <button onClick={toggleSub} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5">
-                                              <Save size={14} />
-                                            </button>
+                                          {filterMode ? (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[11px] text-claude-muted-soft">{items.filter((c) => exportSelection.has(`${prefix}:${c.id}`)).length}/{items.length}</span>
+                                              <button onClick={() => selectSection(prefix, items)} className="text-[11px] text-claude-primary hover:text-claude-primary-active font-medium">全选</button>
+                                              <button onClick={() => deselectSection(prefix, items)} className="text-[11px] text-claude-muted hover:text-claude-ink">取消</button>
+                                            </div>
                                           ) : (
-                                            <button onClick={toggleSub} className="text-claude-muted-soft hover:text-claude-ink transition-colors">
-                                              <Edit3 size={14} />
-                                            </button>
+                                            subEditing ? (
+                                              <button onClick={toggleSub} className="text-[11px] px-2 py-0.5 rounded-[4px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors flex items-center gap-0.5">
+                                                <Save size={14} />
+                                              </button>
+                                            ) : (
+                                              <button onClick={toggleSub} className="text-claude-muted-soft hover:text-claude-ink transition-colors">
+                                                <Edit3 size={14} />
+                                              </button>
+                                            )
                                           )}
                                         </div>
                                       );
@@ -1924,6 +1958,9 @@ export default function LibraryPage() {
                                                         setSelectedCardSource({ type: "card", section: subKey, cardId: item.id });
                                                       } : undefined}
                                                       onUndoPolish={(bulletIdx) => updateStore((s) => undoAiPolish(s, activeDirection, subKey, item.id, bulletIdx))}
+                                                      filterMode={filterMode}
+                                                      isChecked={exportSelection.has(`${subKey === "experiences" ? "exp" : subKey === "projects" ? "proj" : subKey === "campus" ? "cam" : "soc"}:${item.id}`)}
+                                                      onToggleCheck={() => toggleExportKey(`${subKey === "experiences" ? "exp" : subKey === "projects" ? "proj" : subKey === "campus" ? "cam" : "soc"}:${item.id}`)}
                                                     />
                                                   </SortableCard>
                                                 ))}
@@ -1956,6 +1993,28 @@ export default function LibraryPage() {
         <div className="text-center py-6">
           <p className="text-[12px] text-claude-muted-soft">配合浏览器插件「简历库助手」使用</p>
         </div>
+
+        {/* Filter mode bottom bar */}
+        {filterMode && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-6 py-3 border-t" style={{ background: "rgba(252,249,243,0.92)", borderColor: "var(--color-claude-hairline)", backdropFilter: "blur(16px)" }}>
+            <div className="flex items-center gap-3">
+              <button onClick={selectAllExport} className="text-[12px] text-claude-primary hover:text-claude-primary-active font-medium">全选</button>
+              <button onClick={deselectAllExport} className="text-[12px] text-claude-muted hover:text-claude-ink">取消全选</button>
+              <span className="text-[12px] text-claude-muted-soft">
+                已选 {exportSelection.size} 项
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setFilterMode(false)} className="px-4 py-2 text-[12px] text-claude-muted rounded-[8px] hover:bg-claude-surface transition-colors">取消</button>
+              <button onClick={handleExportFiltered} className="px-5 py-2 bg-claude-primary text-claude-on-primary text-[13px] font-medium rounded-[8px] hover:bg-claude-primary-active transition-colors flex items-center gap-1.5">
+                <Download size={13} />导出选中内容
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom padding when filter bar is visible */}
+        {filterMode && <div className="h-16" />}
       </main>
 
       {/* Back to top */}
@@ -1998,106 +2057,6 @@ export default function LibraryPage() {
           </span>
         </div>
       </nav>
-
-      {/* Export Filter Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#272728]/20 p-5" onClick={() => setShowExportModal(false)}>
-          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="bg-claude-surface-card rounded-[16px] border border-claude-hairline p-6 w-full max-w-[440px] shadow-xl space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-[16px] font-medium text-claude-ink">导出筛选</h2>
-
-            {/* Top bar: select all / deselect all */}
-            <div className="flex items-center gap-3">
-              <button onClick={selectAllExport} className="text-[12px] text-claude-primary hover:text-claude-primary-active font-medium">全选</button>
-              <button onClick={deselectAllExport} className="text-[12px] text-claude-muted hover:text-claude-ink">取消全选</button>
-            </div>
-
-            {/* Personal */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={exportSelection.has("personal")} onChange={() => toggleExportKey("personal")} className="accent-claude-primary w-3.5 h-3.5" />
-                <span className="text-[13px] text-claude-ink">个人信息</span>
-              </label>
-            </div>
-
-            {/* Education */}
-            <div className="space-y-1.5">
-              <p className="text-[13px] font-medium text-claude-ink">教育经历</p>
-              {store?.shared.education.undergrad?.schoolName && (
-                <label className="flex items-center gap-2 cursor-pointer ml-1">
-                  <input type="checkbox" checked={exportSelection.has("edu:undergrad")} onChange={() => toggleExportKey("edu:undergrad")} className="accent-claude-primary w-3.5 h-3.5" />
-                  <span className="text-[12px] text-claude-muted">本科 · {store.shared.education.undergrad.schoolName}</span>
-                </label>
-              )}
-              {store?.shared.education.master?.schoolName && (
-                <label className="flex items-center gap-2 cursor-pointer ml-1">
-                  <input type="checkbox" checked={exportSelection.has("edu:master")} onChange={() => toggleExportKey("edu:master")} className="accent-claude-primary w-3.5 h-3.5" />
-                  <span className="text-[12px] text-claude-muted">硕士 · {store.shared.education.master.schoolName}</span>
-                </label>
-              )}
-              {store?.shared.education.highSchool?.schoolName && (
-                <label className="flex items-center gap-2 cursor-pointer ml-1">
-                  <input type="checkbox" checked={exportSelection.has("edu:highSchool")} onChange={() => toggleExportKey("edu:highSchool")} className="accent-claude-primary w-3.5 h-3.5" />
-                  <span className="text-[12px] text-claude-muted">高中 · {store.shared.education.highSchool.schoolName}</span>
-                </label>
-              )}
-            </div>
-
-            {/* Family */}
-            {(store?.shared.family?.length ?? 0) > 0 && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={exportSelection.has("family")} onChange={() => toggleExportKey("family")} className="accent-claude-primary w-3.5 h-3.5" />
-                <span className="text-[13px] text-claude-ink">家庭成员 ({store!.shared.family.length} 人)</span>
-              </label>
-            )}
-
-            {/* Skills */}
-            {Object.keys(library.skills).length > 0 && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={exportSelection.has("skills")} onChange={() => toggleExportKey("skills")} className="accent-claude-primary w-3.5 h-3.5" />
-                <span className="text-[13px] text-claude-ink">技能</span>
-              </label>
-            )}
-
-            {/* SelfEval */}
-            {library.selfEval && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={exportSelection.has("selfEval")} onChange={() => toggleExportKey("selfEval")} className="accent-claude-primary w-3.5 h-3.5" />
-                <span className="text-[13px] text-claude-ink">自我评价</span>
-              </label>
-            )}
-
-            {/* Card sections */}
-            {(["experiences", "projects", "campus", "social"] as CardSection[]).map((sec) => {
-              const items = library[sec];
-              if (items.length === 0) return null;
-              const prefix = sec === "experiences" ? "exp" : sec === "projects" ? "proj" : sec === "campus" ? "cam" : "soc";
-              const meta = SECTION_META.find((m) => m.key === sec)!;
-              const selectedCount = items.filter((c) => exportSelection.has(`${prefix}:${c.id}`)).length;
-              return (
-                <div key={sec} className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-claude-ink">{meta.title}</span>
-                    <button onClick={() => selectSection(prefix, items)} className="text-[11px] text-claude-primary hover:text-claude-primary-active">全选</button>
-                    <button onClick={() => deselectSection(prefix, items)} className="text-[11px] text-claude-muted hover:text-claude-ink">取消</button>
-                    <span className="text-[11px] text-claude-muted-soft">{selectedCount}/{items.length}</span>
-                  </div>
-                  {items.map((c) => (
-                    <label key={c.id} className="flex items-center gap-2 cursor-pointer ml-1">
-                      <input type="checkbox" checked={exportSelection.has(`${prefix}:${c.id}`)} onChange={() => toggleExportKey(`${prefix}:${c.id}`)} className="accent-claude-primary w-3.5 h-3.5" />
-                      <span className="text-[12px] text-claude-muted truncate">{c.name || "(空)"} · {c.role}</span>
-                    </label>
-                  ))}
-                </div>
-              );
-            })}
-
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => setShowExportModal(false)} className="flex-1 py-2.5 text-[13px] text-claude-muted rounded-[8px] hover:bg-claude-surface transition-colors">取消</button>
-              <button onClick={handleExportFiltered} className="flex-1 py-2.5 bg-claude-primary text-claude-on-primary text-[13px] font-medium rounded-[8px] hover:bg-claude-primary-active transition-colors">导出选中内容</button>
-            </div>
-          </motion.div>
-        </div>
-      )}
 
       {/* API Key Modal */}
       {apiKeyModal && (
