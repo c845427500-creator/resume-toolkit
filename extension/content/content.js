@@ -4,17 +4,52 @@ document.addEventListener("focusin", (e) => {
   lastFocusedEl = e.target;
 });
 
-// Listen for messages from popup
+// ─── Auto-sync: read web app's localStorage and push to extension storage ───
+function tryAutoSync() {
+  try {
+    const raw = localStorage.getItem("resume_library_v2");
+    if (!raw) return;
+    const store = JSON.parse(raw);
+    if (!store || !store.libraries) return;
+
+    const data = {
+      shared: store.shared || {},
+      libraries: store.libraries || {},
+      directions: [
+        ...["综合", "产品", "AI", "技术", "金融"].filter((d) => store.libraries[d]),
+        ...(store.customDirections || []),
+      ],
+    };
+
+    chrome.storage.local.set({ resumeData: data }).catch(() => {});
+  } catch {}
+}
+
+// Sync on page load
+tryAutoSync();
+
+// Also sync whenever localStorage changes (user edits data in the app)
+window.addEventListener("storage", () => {
+  // localStorage event only fires for OTHER tabs. For same-tab changes,
+  // we periodically check when the popup requests it.
+});
+
+// ─── Listen for messages from popup ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "fill") {
-    const result = fillActiveElement(message.text, message.label);
+    const result = fillActiveElement(message.text);
     sendResponse(result);
+    return true;
+  }
+  if (message.type === "sync") {
+    tryAutoSync();
+    sendResponse({ success: true });
     return true;
   }
   return false;
 });
 
-function fillActiveElement(text, label) {
+function fillActiveElement(text) {
   const el = lastFocusedEl || document.activeElement;
   if (!el || el === document.body) {
     return { success: false, error: "请先点击目标输入框" };
@@ -22,23 +57,13 @@ function fillActiveElement(text, label) {
 
   const tag = el.tagName.toLowerCase();
 
-  // Handle <input> (text, email, tel, etc.)
-  if (tag === "input") {
+  if (tag === "input" || tag === "textarea") {
     el.value = text;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
     return { success: true };
   }
 
-  // Handle <textarea>
-  if (tag === "textarea") {
-    el.value = text;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    return { success: true };
-  }
-
-  // Handle <select>
   if (tag === "select") {
     const matchResult = matchSelect(el, text);
     if (matchResult.success) {
@@ -47,7 +72,6 @@ function fillActiveElement(text, label) {
     return matchResult;
   }
 
-  // Handle contenteditable / rich text editors
   if (el.isContentEditable) {
     try {
       el.focus();
@@ -58,7 +82,6 @@ function fillActiveElement(text, label) {
     }
   }
 
-  // Handle if a parent has contenteditable
   let parent = el.parentElement;
   while (parent) {
     if (parent.isContentEditable) {
@@ -82,45 +105,29 @@ function matchSelect(selectEl, text) {
     return { success: false, error: "下拉框无选项" };
   }
 
-  // Normalize function: remove brackets, extra spaces, unify case
   const normalize = (s) =>
     s
-      .replace(/[（(][^)）]*[)）]/g, "") // remove parenthetical content
-      .replace(/\s+/g, "")               // remove spaces
+      .replace(/[（(][^)）]*[)）]/g, "")
+      .replace(/\s+/g, "")
       .toLowerCase();
 
   const target = normalize(text);
 
-  // Try exact match first (after normalization)
   let match = options.find((opt) => normalize(opt.text) === target);
-  if (match) {
-    selectEl.value = match.value;
-    return { success: true };
-  }
+  if (match) { selectEl.value = match.value; return { success: true }; }
 
-  // Try includes match
   match = options.find((opt) => {
     const n = normalize(opt.text);
     return n.includes(target) || target.includes(n);
   });
-  if (match) {
-    selectEl.value = match.value;
-    return { success: true };
-  }
+  if (match) { selectEl.value = match.value; return { success: true }; }
 
-  // Try keyword match (split target and find option containing any keyword)
   const keywords = target.split(/[,，、/]+/).filter((k) => k.length >= 2);
   match = options.find((opt) => {
     const n = normalize(opt.text);
     return keywords.some((kw) => n.includes(kw));
   });
-  if (match) {
-    selectEl.value = match.value;
-    return { success: true };
-  }
+  if (match) { selectEl.value = match.value; return { success: true }; }
 
-  return {
-    success: false,
-    error: "未匹配到下拉选项，请手动选择",
-  };
+  return { success: false, error: "未匹配到下拉选项，请手动选择" };
 }

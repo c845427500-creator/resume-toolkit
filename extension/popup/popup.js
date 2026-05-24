@@ -26,6 +26,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }).catch(() => {
     renderAll();
   });
+
+  // Step 2: auto-sync from active tab (if on resume toolkit page)
+  trySyncFromTab();
 });
 
 // ——— Validation ———
@@ -211,21 +214,50 @@ function status(msg, type) {
   setTimeout(() => bar.classList.add("hidden"), 2000);
 }
 
-// —── Sync: fetch from web ───
+// —── Auto-sync from active tab (content script reads localStorage) ───
+async function trySyncFromTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    await chrome.tabs.sendMessage(tab.id, { type: "sync" });
+    // Re-read from storage after sync
+    const result = await chrome.storage.local.get("resumeData");
+    if (result.resumeData && isValid(result.resumeData)) {
+      const prev = JSON.stringify(data);
+      data = result.resumeData;
+      if (!data.directions) data.directions = Object.keys(data.libraries || {});
+      if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
+      if (JSON.stringify(data) !== prev) renderAll();
+    }
+  } catch {} // Tab might not be the library page or content script not injected yet
+}
+
+// —── Sync: try tab first, then HTTP fetch ───
 async function handleSync() {
   const btn = document.getElementById("syncBtn");
   btn.textContent = "同步中...";
   btn.disabled = true;
+
   try {
-    const resp = await fetch(SYNC_URL, { cache: "no-cache" });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const json = await resp.json();
-    if (!isValid(json)) throw new Error("数据格式不符");
-    data = json;
-    if (!data.directions) data.directions = Object.keys(data.libraries || {});
-    if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
-    await chrome.storage.local.set({ resumeData: data });
-    renderAll();
+    // Try sync from active tab first (content script reads localStorage)
+    await trySyncFromTab();
+
+    const isEmpty = !isValid(data) || !data.libraries || Object.keys(data.libraries).every((k) => {
+      const lib = data.libraries[k];
+      return !lib.experiences?.length && !lib.projects?.length && !lib.campus?.length && !lib.social?.length;
+    });
+
+    if (isEmpty) {
+      const resp = await fetch(SYNC_URL, { cache: "no-cache" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const json = await resp.json();
+      if (!isValid(json)) throw new Error("数据格式不符");
+      data = json;
+      if (!data.directions) data.directions = Object.keys(data.libraries || {});
+      if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
+      await chrome.storage.local.set({ resumeData: data });
+      renderAll();
+    }
     status("✓ 同步成功（" + data.directions.length + " 个方向）", "ok");
   } catch (e) {
     status("同步失败：" + (e.message || "网络错误"), "err");
