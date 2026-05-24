@@ -442,7 +442,7 @@ function ResumeCard({
             }}
           >
             {item.bullets.map((b, idx) => (
-              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`} style={b.originalText ? { borderLeft: "2px solid var(--color-claude-hairline)", paddingLeft: 10 } : undefined}>
+              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`} >
                 <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
               </div>
             ))}
