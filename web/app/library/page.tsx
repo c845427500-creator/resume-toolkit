@@ -398,10 +398,10 @@ function ResumeCard({
                         }}
                         className={`w-6 h-6 flex items-center justify-center rounded-[4px] transition-colors ${
                           expanded
-                            ? "bg-amber-100/60 text-amber-700 hover:bg-amber-100"
-                            : "hover:bg-amber-50 text-claude-muted-soft hover:text-amber-600"
+                            ? "bg-claude-cream-strong/80 text-claude-ink hover:bg-claude-cream-strong"
+                            : "hover:bg-claude-cream-strong/50 text-claude-muted-soft hover:text-claude-ink"
                         }`}
-                        title={expanded ? "收起原文" : "查看 AI 润色前的原文"}
+                        title={expanded ? "收起原文" : "查看原文"}
                       >
                         {expanded ? <ArrowUp size={12} /> : <ChevronDown size={12} />}
                       </button>
@@ -410,16 +410,16 @@ function ResumeCard({
                 </div>
                 {/* Expanded original text */}
                 {hasOriginal && expanded && (
-                  <div className="ml-0 rounded-[6px] border-l-2 border-amber-400/60 bg-amber-50/50 px-3 py-2">
+                  <div className="ml-0 rounded-[6px] border-l border-claude-hairline bg-claude-surface-card/50 px-3 py-2">
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] text-amber-700/70 uppercase tracking-wider">AI 润色前的原文</span>
+                      <span className="text-[10px] text-claude-muted uppercase tracking-wider">原文</span>
                       <button
                         onClick={() => {
                           const updated = [...item.bullets];
                           updated[idx] = { ...updated[idx], text: b.originalText! };
                           onUpdate({ bullets: updated });
                         }}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] text-amber-700 hover:bg-amber-100/80 transition-colors"
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] text-claude-muted hover:bg-claude-surface-card hover:text-claude-ink transition-colors"
                         title="替换为原文"
                       >
                         <RotateCcw size={10} />
@@ -442,7 +442,7 @@ function ResumeCard({
             }}
           >
             {item.bullets.map((b, idx) => (
-              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`} style={b.originalText ? { borderLeft: "2px solid rgba(251,191,36,0.6)", paddingLeft: 10 } : undefined}>
+              <div key={idx} className={`text-[13px] leading-relaxed text-claude-body bg-claude-canvas rounded-[6px] px-3 py-2 break-words overflow-hidden ${idx > 0 ? "mt-1.5" : ""} ${onSelectForAi ? "hover:ring-1 hover:ring-claude-primary/30 hover:border-claude-primary/40 transition-all" : ""}`} style={b.originalText ? { borderLeft: "2px solid var(--color-claude-hairline)", paddingLeft: 10 } : undefined}>
                 <span className="[word-break:break-word]">{renderMarkdown(b.text)}</span>
               </div>
             ))}
