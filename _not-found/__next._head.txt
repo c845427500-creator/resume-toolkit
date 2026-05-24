@@ -1,0 +1,6 @@
+1:"$Sreact.fragment"
+2:I[11454,["/resume-toolkit/_next/static/chunks/02f5o9sz-13w7.js","/resume-toolkit/_next/static/chunks/0d~3dfq62u3um.js"],"ViewportBoundary"]
+3:I[11454,["/resume-toolkit/_next/static/chunks/02f5o9sz-13w7.js","/resume-toolkit/_next/static/chunks/0d~3dfq62u3um.js"],"MetadataBoundary"]
+4:"$Sreact.suspense"
+5:I[48899,["/resume-toolkit/_next/static/chunks/02f5o9sz-13w7.js","/resume-toolkit/_next/static/chunks/0d~3dfq62u3um.js"],"IconMark"]
+0:{"rsc":["$","$1","h",{"children":[["$","meta",null,{"name":"robots","content":"noindex"}],["$","$L2",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","div",null,{"hidden":true,"children":["$","$L3",null,{"children":["$","$4",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"简历工具箱 · AI Resume Toolkit"}],["$","meta","1",{"name":"description","content":"AI 简历解析 · 岗位方向匹配 · STAR 法则写作 · 浏览器插件一键填入"}],["$","link","2",{"rel":"icon","href":"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🌰</text></svg>"}],["$","$L5","3",{}]]}]}]}],null]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"eGYy31hcSg7UQkl7Fu7c7"}

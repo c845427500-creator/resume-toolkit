@@ -1,0 +1,15 @@
+{
+  "shared": {
+    "personal": { "name": "", "phone": "", "email": "", "idType": "身份证", "gender": "", "birthDate": "", "highestDegree": "", "idNumber": "", "ethnicity": "", "nativePlace": "", "hukouLocation": "", "hukouAddress": "", "currentAddress": "", "politicalStatus": "", "maritalStatus": "", "height": "", "weight": "", "emergencyContact": "", "emergencyRelation": "", "emergencyPhone": "", "healthStatus": "" },
+    "education": {},
+    "family": []
+  },
+  "libraries": {
+    "综合": { "experiences": [], "projects": [], "campus": [], "social": [], "skills": {}, "selfEval": "" },
+    "产品": { "experiences": [], "projects": [], "campus": [], "social": [], "skills": {}, "selfEval": "" },
+    "AI": { "experiences": [], "projects": [], "campus": [], "social": [], "skills": {}, "selfEval": "" },
+    "技术": { "experiences": [], "projects": [], "campus": [], "social": [], "skills": {}, "selfEval": "" },
+    "金融": { "experiences": [], "projects": [], "campus": [], "social": [], "skills": {}, "selfEval": "" }
+  },
+  "directions": ["综合", "产品", "AI", "技术", "金融"]
+}
