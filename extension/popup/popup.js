@@ -235,8 +235,26 @@ async function handleSync() {
   }
 }
 
-// —── Import from clipboard or file ───
-function handleImport() { document.getElementById("fileInput").click(); }
+// ——— Import from clipboard (primary) or file (fallback) ———
+async function handleImport() {
+  try {
+    const clipText = await navigator.clipboard.readText();
+    if (clipText) {
+      const json = JSON.parse(clipText);
+      if (isValid(json)) {
+        data = json;
+        if (!data.directions) data.directions = Object.keys(data.libraries || {});
+        if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
+        await chrome.storage.local.set({ resumeData: data });
+        renderAll();
+        status("✓ 已从剪贴板导入（" + data.directions.length + " 个方向）", "ok");
+        return;
+      }
+    }
+  } catch {}
+  // Fallback: file import
+  document.getElementById("fileInput").click();
+}
 
 function handleFileSelect(e) {
   const file = e.target.files[0];
