@@ -1473,15 +1473,19 @@ export default function LibraryPage() {
           </button>
 <button onClick={() => {
             if (!store) return;
-            const payload = {
-              shared: store.shared,
-              libraries: store.libraries,
-              directions: [...DEFAULT_JOB_TYPES.filter(d => store.libraries[d]), ...store.customDirections],
+            setCopied(true);
+            // Trigger content script to sync
+            window.dispatchEvent(new CustomEvent("resume:sync-to-extension"));
+            // Content script will dispatch resume:sync-done when complete
+            const onDone = () => {
+              window.removeEventListener("resume:sync-done", onDone);
+              setTimeout(() => setCopied(false), 2000);
             };
-            navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-            setCopied(true); setTimeout(() => setCopied(false), 2000);
+            window.addEventListener("resume:sync-done", onDone);
+            // Fallback: reset after 2s even if no response
+            setTimeout(() => { window.removeEventListener("resume:sync-done", onDone); setCopied(false); }, 2500);
           }} className="flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface transition-colors">
-            <Copy size={12} />同步到插件
+            {copied ? <><Check size={12} />已同步</> : <><Copy size={12} />同步到插件</>}
           </button>
           {undoSnapshot ? (
             <button
@@ -2007,7 +2011,7 @@ export default function LibraryPage() {
             </a>
           </p>
           <p className="text-[11px] text-claude-muted-soft/70">
-            点击顶部「同步到插件」→ 在插件弹窗中「导入」JSON 即可
+            点击顶部「同步到插件」→ 打开插件即可看到同步数据
           </p>
         </div>
 

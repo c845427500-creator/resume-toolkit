@@ -10,7 +10,7 @@
     <div class="header">
       <h1>🌰 简历库助手</h1>
       <div class="header-actions">
-        <button id="importBtn" class="text-btn">粘贴导入</button>
+        <button id="matchBtn" class="text-btn primary-btn">一键匹配</button>
         <button id="syncBtn" class="text-btn">同步</button>
       </div>
     </div>
@@ -18,11 +18,10 @@
     <div id="dirTabs" class="dir-tabs hidden"></div>
     <div class="content">
       <div id="loading" class="loading">加载中...</div>
-      <div id="empty" class="empty hidden">暂无数据，在网页点「同步到插件」→ 在此点「粘贴导入」</div>
+      <div id="empty" class="empty hidden">暂无数据，请先同步简历库</div>
       <div id="sections" class="sections hidden"></div>
     </div>
-    <div class="footer">点击条目 → 填入网页当前输入框 · 下拉框自动匹配 · 来自 简历工具箱</div>
-    <input type="file" id="fileInput" accept=".json" class="hidden">
+    <div class="footer">标签点击填单项 · 一键匹配填全页 · 来自 简历工具箱</div>
   </div>
   <script src="../lib/data.js"></script>
   <script src="popup.js"></script>

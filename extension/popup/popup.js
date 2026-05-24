@@ -10,9 +10,8 @@ let activeDir = "综合";
 
 // ——— Init ———
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("importBtn").addEventListener("click", handleImport);
+  document.getElementById("matchBtn").addEventListener("click", handleAutoFill);
   document.getElementById("syncBtn").addEventListener("click", handleSync);
-  document.getElementById("fileInput").addEventListener("change", handleFileSelect);
 
   // Step 1: load from storage
   chrome.storage.local.get("resumeData").then((result) => {
@@ -27,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderAll();
   });
 
-  // Step 2: auto-sync from active tab (if on resume toolkit page)
+  // Step 2: auto-sync from active tab
   trySyncFromTab();
 });
 
@@ -77,21 +76,28 @@ function renderSections() {
   const p = shared.personal || {};
   const edu = shared.education || {};
 
-  // Personal
-  if (p.name || p.phone || p.email) {
-    const items = [];
-    if (p.name) items.push(item("姓名", p.name));
-    if (p.phone) items.push(item("电话", p.phone));
-    if (p.email) items.push(item("邮箱", p.email));
-    if (items.length) container.appendChild(section("基本信息", items));
-  }
+  // Personal — each field as a tag
+  const personalTags = [];
+  const personalFields = [
+    ["姓名", p.name], ["电话", p.phone], ["邮箱", p.email],
+  ];
+  personalFields.forEach(([label, value]) => {
+    if (value) personalTags.push(tag(label, value));
+  });
+  if (personalTags.length) container.appendChild(section("基本信息", personalTags));
 
-  // Education
-  const eduItems = [];
-  if (edu.master?.schoolName) eduItems.push(item(edu.master.schoolName, `${edu.master.degree || ""} · ${edu.master.period || ""}`));
-  if (edu.undergrad?.schoolName) eduItems.push(item(edu.undergrad.schoolName, `${edu.undergrad.degree || ""} · ${edu.undergrad.period || ""}`));
-  if (edu.highSchool?.schoolName) eduItems.push(item(edu.highSchool.schoolName, "高中"));
-  if (eduItems.length) container.appendChild(section("教育经历", eduItems));
+  // Education — each school as a tag
+  const eduTags = [];
+  if (edu.master?.schoolName) {
+    eduTags.push(tag(edu.master.schoolName, `${edu.master.degree || ""} · ${edu.master.period || ""}`));
+  }
+  if (edu.undergrad?.schoolName) {
+    eduTags.push(tag(edu.undergrad.schoolName, `${edu.undergrad.degree || ""} · ${edu.undergrad.period || ""}`));
+  }
+  if (edu.highSchool?.schoolName) {
+    eduTags.push(tag(edu.highSchool.schoolName, "高中"));
+  }
+  if (eduTags.length) container.appendChild(section("教育经历", eduTags));
 
   if (!lib) {
     document.getElementById("empty").classList.remove("hidden");
@@ -99,95 +105,83 @@ function renderSections() {
     return;
   }
 
-  // Experiences
+  // Experiences — each experience as a tag
   if (lib.experiences?.length) {
-    const items = [];
-    lib.experiences.forEach((exp) => {
+    const tags = lib.experiences.map((exp) => {
       const label = `${exp.name || exp.company || ""} · ${exp.role || ""}`;
-      (exp.bullets || []).forEach((b) => {
-        const text = typeof b === "string" ? b : b.text || "";
-        if (text) items.push(item(label, text));
-      });
+      return tag(label, label);
     });
-    if (items.length) container.appendChild(section("工作/实习经历", items));
+    container.appendChild(section("工作/实习经历", tags));
   }
 
-  // Projects
+  // Projects — each project as a tag
   if (lib.projects?.length) {
-    const items = [];
-    lib.projects.forEach((proj) => {
+    const tags = lib.projects.map((proj) => {
       const label = `${proj.name || ""} · ${proj.role || ""}`;
-      (proj.bullets || []).forEach((b) => {
-        const text = typeof b === "string" ? b : b.text || "";
-        if (text) items.push(item(label, text));
-      });
+      return tag(label, label);
     });
-    if (items.length) container.appendChild(section("项目经历", items));
+    container.appendChild(section("项目经历", tags));
   }
 
   // Campus
   if (lib.campus?.length) {
-    const items = [];
-    lib.campus.forEach((c) => {
+    const tags = lib.campus.map((c) => {
       const label = `${c.name || ""} · ${c.role || ""}`;
-      (c.bullets || []).forEach((b) => {
-        const text = typeof b === "string" ? b : b.text || "";
-        if (text) items.push(item(label, text));
-      });
+      return tag(label, label);
     });
-    if (items.length) container.appendChild(section("校园经历", items));
+    container.appendChild(section("校园经历", tags));
   }
 
   // Social
   if (lib.social?.length) {
-    const items = [];
-    lib.social.forEach((s) => {
+    const tags = lib.social.map((s) => {
       const label = `${s.name || ""} · ${s.role || ""}`;
-      (s.bullets || []).forEach((b) => {
-        const text = typeof b === "string" ? b : b.text || "";
-        if (text) items.push(item(label, text));
-      });
+      return tag(label, label);
     });
-    if (items.length) container.appendChild(section("社会/实践经历", items));
+    container.appendChild(section("社会/实践经历", tags));
   }
 
-  // Skills
+  // Skills — each category as a tag
   if (lib.skills && Object.keys(lib.skills).length > 0) {
-    const items = [];
-    Object.entries(lib.skills).forEach(([cat, skills]) => {
-      if (Array.isArray(skills)) skills.forEach((s) => items.push(item(cat, s)));
+    const tags = Object.entries(lib.skills).map(([cat, skills]) => {
+      const skillText = Array.isArray(skills) ? skills.join("、") : "";
+      return tag(cat, skillText);
     });
-    if (items.length) container.appendChild(section("技能", items));
+    container.appendChild(section("技能", tags));
   }
 
   // SelfEval
   if (lib.selfEval) {
-    container.appendChild(section("自我评价", [item("自我评价", lib.selfEval)]));
+    container.appendChild(section("自我评价", [tag("自我评价", lib.selfEval)]));
   }
 }
 
-// —── Section builder ───
-function section(title, itemEls) {
+// —── Section builder (collapsed by default) ───
+function section(title, tagEls) {
   const div = document.createElement("div");
-  div.className = "section";
+  div.className = "section collapsed";
   const header = document.createElement("div");
   header.className = "section-header";
-  header.innerHTML = `<span class="section-title">${esc(title)}</span><span class="section-badge">${itemEls.length}</span><span class="section-arrow">▼</span>`;
+  header.innerHTML = `<span class="section-title">${esc(title)}</span><span class="section-badge">${tagEls.length}</span><span class="section-arrow">▼</span>`;
   header.addEventListener("click", () => div.classList.toggle("collapsed"));
   const body = document.createElement("div");
   body.className = "section-body";
-  itemEls.forEach((el) => body.appendChild(el));
+  const grid = document.createElement("div");
+  grid.className = "tag-grid";
+  tagEls.forEach((el) => grid.appendChild(el));
+  body.appendChild(grid);
   div.appendChild(header);
   div.appendChild(body);
   return div;
 }
 
-// —── Item builder ───
-function item(label, text) {
+// —── Tag builder ───
+function tag(label, fillText) {
   const btn = document.createElement("button");
-  btn.className = "item-btn";
-  btn.innerHTML = `<span class="item-label">${esc(label)}</span><span class="item-text">${esc(text)}</span>`;
-  btn.addEventListener("click", () => fill(text));
+  btn.className = "info-tag";
+  btn.textContent = label;
+  btn.title = fillText || label;
+  btn.addEventListener("click", () => fill(fillText || label));
   return btn;
 }
 
@@ -214,22 +208,24 @@ function status(msg, type) {
   setTimeout(() => bar.classList.add("hidden"), 2000);
 }
 
-// —── Auto-sync from active tab (content script reads localStorage) ───
+// —── Auto-sync from active tab ───
 async function trySyncFromTab() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
-    await chrome.tabs.sendMessage(tab.id, { type: "sync" });
-    // Re-read from storage after sync
-    const result = await chrome.storage.local.get("resumeData");
-    if (result.resumeData && isValid(result.resumeData)) {
+    if (!tab?.id) return false;
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: "sync" });
+    if (resp?.success && resp.data && isValid(resp.data)) {
       const prev = JSON.stringify(data);
-      data = result.resumeData;
+      data = resp.data;
       if (!data.directions) data.directions = Object.keys(data.libraries || {});
       if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
       if (JSON.stringify(data) !== prev) renderAll();
+      return true;
     }
-  } catch {} // Tab might not be the library page or content script not injected yet
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 // —── Sync: try tab first, then HTTP fetch ───
@@ -240,14 +236,10 @@ async function handleSync() {
 
   try {
     // Try sync from active tab first (content script reads localStorage)
-    await trySyncFromTab();
+    const synced = await trySyncFromTab();
 
-    const isEmpty = !isValid(data) || !data.libraries || Object.keys(data.libraries).every((k) => {
-      const lib = data.libraries[k];
-      return !lib.experiences?.length && !lib.projects?.length && !lib.campus?.length && !lib.social?.length;
-    });
-
-    if (isEmpty) {
+    if (!synced) {
+      // Fallback: HTTP fetch
       const resp = await fetch(SYNC_URL, { cache: "no-cache" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const json = await resp.json();
@@ -258,7 +250,12 @@ async function handleSync() {
       await chrome.storage.local.set({ resumeData: data });
       renderAll();
     }
-    status("✓ 同步成功（" + data.directions.length + " 个方向）", "ok");
+    const c = data._counts;
+    if (c) {
+      status("✓ 已同步 " + c.dirs + " 个方向（" + c.exp + " 经历 + " + c.proj + " 项目 + " + c.campus + " 校园 + " + c.social + " 实践）", "ok");
+    } else {
+      status("✓ 同步成功（" + data.directions.length + " 个方向）", "ok");
+    }
   } catch (e) {
     status("同步失败：" + (e.message || "网络错误"), "err");
   } finally {
@@ -267,45 +264,35 @@ async function handleSync() {
   }
 }
 
-// ——— Import from clipboard (primary) or file (fallback) ———
-async function handleImport() {
-  try {
-    const clipText = await navigator.clipboard.readText();
-    if (clipText) {
-      const json = JSON.parse(clipText);
-      if (isValid(json)) {
-        data = json;
-        if (!data.directions) data.directions = Object.keys(data.libraries || {});
-        if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
-        await chrome.storage.local.set({ resumeData: data });
-        renderAll();
-        status("✓ 已从剪贴板导入（" + data.directions.length + " 个方向）", "ok");
-        return;
-      }
-    }
-  } catch {}
-  // Fallback: file import
-  document.getElementById("fileInput").click();
-}
+// —── One-click auto-fill ───
+async function handleAutoFill() {
+  const btn = document.getElementById("matchBtn");
+  btn.textContent = "匹配中...";
+  btn.disabled = true;
 
-function handleFileSelect(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async (ev) => {
-    try {
-      const json = JSON.parse(ev.target.result);
-      if (!isValid(json)) return status("数据格式不符，缺少 libraries 字段", "err");
-      data = json;
-      if (!data.directions) data.directions = Object.keys(data.libraries || {});
-      if (!data.directions.includes(activeDir)) activeDir = data.directions[0] || "综合";
-      await chrome.storage.local.set({ resumeData: data });
-      renderAll();
-      status("✓ 导入成功（" + data.directions.length + " 个方向）", "ok");
-    } catch { status("JSON 格式错误", "err"); }
-  };
-  reader.readAsText(file);
-  e.target.value = "";
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { status("无法获取当前标签页", "err"); return; }
+
+    const lib = data.libraries?.[activeDir] || {};
+    const payload = {
+      shared: data.shared || {},
+      lib: lib,
+    };
+
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: "autoFill", data: payload });
+    if (resp?.success) {
+      const msg = "✓ 已匹配 " + resp.filled + " 个字段" + (resp.unmatched > 0 ? "，" + resp.unmatched + " 个未匹配已标红" : "");
+      status(msg, resp.unmatched > 0 ? "err" : "ok");
+    } else {
+      status("匹配失败：" + (resp?.error || "未知错误"), "err");
+    }
+  } catch {
+    status("请刷新网页后重试", "err");
+  } finally {
+    btn.textContent = "一键匹配";
+    btn.disabled = false;
+  }
 }
 
 // —── Escape ───
