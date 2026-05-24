@@ -812,21 +812,55 @@ function SkillsEditor({ skills, onUpdate }: { skills: Record<string, string[]>; 
 }
 
 // ─── SelfEvalEditor ───────────────────────────────
-function SelfEvalEditor({ selfEval, onSave }: { selfEval: string; onSave: (v: string) => void }) {
+function SelfEvalEditor({ selfEval, onSave, originalText, onRestoreOriginal }: { selfEval: string; onSave: (v: string) => void; originalText?: string | null; onRestoreOriginal?: () => void }) {
   const [text, setText] = useState(selfEval);
+  const [expanded, setExpanded] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { setText(selfEval); }, [selfEval]);
+  useEffect(() => { setText(selfEval); setExpanded(false); }, [selfEval]);
 
   return (
     <div className="space-y-2">
       <MarkdownToolbar editorRef={editorRef} />
-      <RichTextarea
-        editorRef={editorRef}
-        value={text}
-        onChange={(v) => { setText(v); onSave(v); }}
-        placeholder="自我评价..."
-        className="w-full text-[14px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[8px] px-3 py-2 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[60px]"
-      />
+      <div className="flex items-start gap-1.5">
+        <RichTextarea
+          editorRef={editorRef}
+          value={text}
+          onChange={(v) => { setText(v); onSave(v); }}
+          placeholder="自我评价..."
+          className="flex-1 text-[14px] leading-relaxed text-claude-ink bg-claude-canvas rounded-[8px] px-3 py-2 border border-claude-hairline focus:border-claude-primary focus:outline-none min-h-[60px]"
+        />
+        {originalText && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className={`w-6 h-6 flex items-center justify-center rounded-[4px] transition-colors mt-0.5 ${
+              expanded
+                ? "bg-claude-cream-strong/80 text-claude-ink hover:bg-claude-cream-strong"
+                : "hover:bg-claude-cream-strong/50 text-claude-muted-soft hover:text-claude-ink"
+            }`}
+            title={expanded ? "收起原文" : "查看原文"}
+          >
+            {expanded ? <ArrowUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
+      </div>
+      {originalText && expanded && (
+        <div className="ml-0 rounded-[6px] border-l border-claude-hairline bg-claude-surface-card/50 px-3 py-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-claude-muted uppercase tracking-wider">原文</span>
+            <button
+              onClick={() => { setText(originalText); onSave(originalText); setExpanded(false); onRestoreOriginal?.(); }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] text-claude-muted hover:bg-claude-surface-card hover:text-claude-ink transition-colors"
+              title="替换为原文"
+            >
+              <RotateCcw size={10} />
+              <span>恢复原文</span>
+            </button>
+          </div>
+          <p className="text-[12px] text-claude-muted leading-relaxed whitespace-pre-wrap break-words">
+            {originalText}
+          </p>
+        </div>
+      )}
       <div className="text-[12px] text-claude-muted-soft">{text.length} 字</div>
     </div>
   );
@@ -930,6 +964,7 @@ export default function LibraryPage() {
   const [selectedCardText, setSelectedCardText] = useState("");
   const [selectedCardLabel, setSelectedCardLabel] = useState("");
   const [selectedCardSource, setSelectedCardSource] = useState<{ type: "selfEval" } | { type: "card"; section: string; cardId: string } | null>(null);
+  const [selfEvalOriginal, setSelfEvalOriginal] = useState<string | null>(null);
   const [aiBtnPos, setAiBtnPos] = useState({ right: 24, bottom: 112 });
   const aiBtnDragRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, startRight: 24, startBottom: 112 });
   useEffect(() => { setUndoSnapshot(null); }, [activeDirection]);
@@ -1040,6 +1075,7 @@ export default function LibraryPage() {
   const handleAcceptPolish = (text: string, originalText: string) => {
     if (!selectedCardSource) return;
     if (selectedCardSource.type === "selfEval") {
+      setSelfEvalOriginal(originalText);
       updateStore((s) => updateSelfEval(s, activeDirection, text));
     } else if (selectedCardSource.type === "card") {
       const originalBullets = originalText
@@ -1785,7 +1821,7 @@ export default function LibraryPage() {
                         >
                           {editing ? (
                             <div className="space-y-4">
-                              <SelfEvalEditor selfEval={se} onSave={(v) => updateStore((s) => updateSelfEval(s, activeDirection, v))} />
+                              <SelfEvalEditor selfEval={se} onSave={(v) => { updateStore((s) => updateSelfEval(s, activeDirection, v)); setSelfEvalOriginal(null); }} originalText={selfEvalOriginal} onRestoreOriginal={() => setSelfEvalOriginal(null)} />
                               <div className="border-t border-claude-hairline" />
                               <CustomFieldsEditor
                                 fields={store.shared.customFields["selfEval"] || []}
