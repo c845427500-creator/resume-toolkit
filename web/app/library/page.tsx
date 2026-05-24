@@ -1453,21 +1453,25 @@ export default function LibraryPage() {
         <div className="flex items-center gap-2 -mt-2 pb-2">
           <button
             onClick={() => {
+              if (filterMode) return;
               setSaveAllKey(k => k + 1);
               setEditingSections(new Set(["personal", "education", "family", "skills", "selfEval", "resumeContent"]));
               setEditingSubSections(new Set(subsectionOrder));
             }}
-            className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors"
+            disabled={filterMode}
+            className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors disabled:opacity-30"
           >
             一键编辑
           </button>
           <button
             onClick={() => {
+              if (filterMode) return;
               setSaveAllKey(k => k + 1);
               setEditingSections(new Set());
               setEditingSubSections(new Set());
             }}
-            className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface disabled:opacity-40 transition-colors"
+            disabled={filterMode}
+            className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface disabled:opacity-30 transition-colors"
           >
             一键保存
           </button>
@@ -1475,26 +1479,30 @@ export default function LibraryPage() {
           <button onClick={toggleFilterMode} className={`flex items-center gap-1 px-3 py-1 text-[12px] rounded-[6px] border transition-colors ${filterMode ? "bg-claude-primary text-claude-on-primary border-claude-primary" : "bg-claude-surface-card border-claude-hairline text-claude-ink hover:bg-claude-surface"}`}>
             <Download size={12} />{filterMode ? "退出筛选" : "筛选导出"}
           </button>
-          <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors">
+          <button onClick={filterMode ? undefined : handleCopy} disabled={filterMode} className="flex items-center gap-1 px-3 py-1 text-[12px] font-medium rounded-[6px] bg-claude-primary text-claude-on-primary hover:bg-claude-primary-active transition-colors disabled:opacity-30">
             {copied ? <><Check size={12} />已复制</> : <><Copy size={12} />复制全文</>}
           </button>
           {undoSnapshot ? (
             <button
               onClick={() => {
+                if (filterMode) return;
                 updateStore((s) => ({ ...s, libraries: { ...s.libraries, [activeDirection]: undoSnapshot } }));
                 setUndoSnapshot(null);
               }}
-              className="text-[12px] px-3 py-1 rounded-[6px] text-claude-primary hover:text-claude-primary-active transition-colors font-medium"
+              disabled={filterMode}
+              className="text-[12px] px-3 py-1 rounded-[6px] text-claude-primary hover:text-claude-primary-active transition-colors font-medium disabled:opacity-30"
             >
               撤销清空
             </button>
           ) : (
             <button
               onClick={() => {
+                if (filterMode) return;
                 setUndoSnapshot(JSON.parse(JSON.stringify(library)));
                 updateStore((s) => resetLibrary(s, activeDirection));
               }}
-              className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface disabled:opacity-40 transition-colors"
+              disabled={filterMode}
+              className="text-[12px] px-3 py-1 rounded-[6px] bg-claude-surface-card border border-claude-hairline text-claude-ink hover:bg-claude-surface disabled:opacity-30 transition-colors"
             >
               一键清空
             </button>
